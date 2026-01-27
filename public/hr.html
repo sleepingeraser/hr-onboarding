@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>HR Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body onload="loadDashboard('HR')">
+    <header class="container">
+      <nav class="nav">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <div>HR Dashboard</div>
+        </div>
+        <div class="nav-links">
+          <span id="who" style="font-weight: 800"></span>
+          <button class="btn" onclick="logout()">Logout</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <div>
+          <h1 style="font-size: 34px">HR Control Center</h1>
+          <p style="color: var(--muted)">
+            Review documents, track onboarding progress, and assign equipment.
+          </p>
+          <div class="hero-actions">
+            <button
+              class="btn btn-primary"
+              onclick="alert('Next: implement HR workflows')"
+            >
+              Review Documents
+            </button>
+            <button
+              class="btn"
+              onclick="alert('Next: implement equipment assignment')"
+            >
+              Assign Equipment
+            </button>
+          </div>
+
+          <p id="status" style="margin-top: 16px"></p>
+        </div>
+
+        <div class="hero-card">
+          <div class="mock-top">
+            <div style="font-weight: 900">Pending Approvals</div>
+            <span class="pill">HR</span>
+          </div>
+          <div class="mock-grid">
+            <div class="mock-item">
+              <div>
+                <div style="font-weight: 800">John Tan</div>
+                <div style="color: #475569; font-size: 13px">Bank details</div>
+              </div>
+              <span class="badge">Pending</span>
+            </div>
+            <div class="mock-item">
+              <div>
+                <div style="font-weight: 800">Aisha Lim</div>
+                <div style="color: #475569; font-size: 13px">
+                  Signed contract
+                </div>
+              </div>
+              <span class="badge">Pending</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/js/app.js"></script>
+  </body>
+</html>

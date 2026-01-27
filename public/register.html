@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Register</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <main class="container" style="padding: 40px 0">
+      <a href="/index.html" class="btn btn-ghost">← Back</a>
+
+      <div class="hero-card" style="max-width: 520px; margin: 14px auto 0">
+        <h2 style="margin: 0 0 8px">Register</h2>
+        <p style="margin: 0 0 18px; color: var(--muted)">
+          Create an account (HR or Employee).
+        </p>
+
+        <form onsubmit="registerUser(event)">
+          <label style="font-weight: 800">Name</label>
+          <input
+            id="name"
+            type="text"
+            required
+            style="
+              width: 100%;
+              padding: 12px;
+              border-radius: 12px;
+              border: 1px solid var(--border);
+              margin: 8px 0 14px;
+            "
+          />
+
+          <label style="font-weight: 800">Email</label>
+          <input
+            id="email"
+            type="email"
+            required
+            style="
+              width: 100%;
+              padding: 12px;
+              border-radius: 12px;
+              border: 1px solid var(--border);
+              margin: 8px 0 14px;
+            "
+          />
+
+          <label style="font-weight: 800">Password</label>
+          <input
+            id="password"
+            type="password"
+            required
+            minlength="6"
+            style="
+              width: 100%;
+              padding: 12px;
+              border-radius: 12px;
+              border: 1px solid var(--border);
+              margin: 8px 0 14px;
+            "
+          />
+
+          <label style="font-weight: 800">Role</label>
+          <select
+            id="role"
+            required
+            style="
+              width: 100%;
+              padding: 12px;
+              border-radius: 12px;
+              border: 1px solid var(--border);
+              margin: 8px 0 14px;
+            "
+          >
+            <option value="EMPLOYEE">Employee</option>
+            <option value="HR">HR</option>
+          </select>
+
+          <button class="btn btn-primary" style="width: 100%; padding: 12px">
+            Create Account
+          </button>
+          <p id="msg" style="margin: 12px 0 0"></p>
+        </form>
+
+        <p style="margin: 14px 0 0; color: var(--muted)">
+          Already have an account?
+          <a href="/login.html" style="text-decoration: underline">Log in</a>
+        </p>
+      </div>
+    </main>
+
+    <script src="/js/app.js"></script>
+  </body>
+</html>

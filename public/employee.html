@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Employee Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body onload="loadDashboard('EMPLOYEE')">
+    <header class="container">
+      <nav class="nav">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <div>Employee Dashboard</div>
+        </div>
+        <div class="nav-links">
+          <span id="who" style="font-weight: 800"></span>
+          <button class="btn" onclick="logout()">Logout</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <div>
+          <h1 style="font-size: 34px">Your Onboarding</h1>
+          <p style="color: var(--muted)">
+            Complete your checklist, view training, and upload documents.
+          </p>
+          <div class="hero-actions">
+            <button
+              class="btn btn-primary"
+              onclick="alert('Next: implement checklist page')"
+            >
+              View Checklist
+            </button>
+            <button
+              class="btn"
+              onclick="alert('Next: implement document upload page')"
+            >
+              Upload Documents
+            </button>
+          </div>
+
+          <p id="status" style="margin-top: 16px"></p>
+        </div>
+
+        <div class="hero-card">
+          <div class="mock-top">
+            <div style="font-weight: 900">Today</div>
+            <span class="pill">Day 1</span>
+          </div>
+          <div class="mock-grid">
+            <div class="mock-item">
+              <div>
+                <div style="font-weight: 800">Read company policies</div>
+                <div style="color: #475569; font-size: 13px">10 mins</div>
+              </div>
+              <span class="badge">Pending</span>
+            </div>
+            <div class="mock-item">
+              <div>
+                <div style="font-weight: 800">Attend Safety briefing</div>
+                <div style="color: #475569; font-size: 13px">10:00 AM</div>
+              </div>
+              <span class="badge">Today</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/js/app.js"></script>
+  </body>
+</html>
