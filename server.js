@@ -1,459 +1,336 @@
-const express = require("express");
-const path = require("path");
-const cors = require("cors");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const sql = require("mssql");
-const multer = require("multer");
-require("dotenv").config();
+const API_BASE = "";
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
-
-app.use(cors());
-app.use(express.json());
-
-// serve frontend
-app.use(express.static(path.join(__dirname, "public")));
-
-// serve uploads
-app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
-
-// ---------- SQL connection ----------
-const dbConfig = {
-  server: process.env.DB_SERVER,
-  database: process.env.DB_DATABASE,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  options: {
-    encrypt: String(process.env.DB_ENCRYPT || "false") === "true",
-    trustServerCertificate: true,
-  },
-};
-
-let pool;
-async function getPool() {
-  if (pool) return pool;
-  pool = await sql.connect(dbConfig);
-  return pool;
+// token helpers
+function saveToken(token) {
+  localStorage.setItem("token", token);
+}
+function getToken() {
+  return localStorage.getItem("token");
+}
+function clearToken() {
+  localStorage.removeItem("token");
 }
 
-// ---------- auth middleware ----------
-function authRequired(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [type, token] = header.split(" ");
-  if (type !== "Bearer" || !token)
-    return res.status(401).json({ message: "Missing or invalid token" });
+// improved fetch wrapper (supports JSON + FormData)
+async function api(path, options = {}) {
+  const headers = options.headers || {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ message: "Invalid token" });
+  const isFormData = options.body instanceof FormData;
+  if (!isFormData && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
   }
-}
 
-function roleRequired(role) {
-  return (req, res, next) => {
-    if (!req.user?.role || req.user.role !== role)
-      return res.status(403).json({ message: "Forbidden" });
-    next();
-  };
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Request failed");
+  return data;
 }
-
-function normalizeEmail(email) {
-  return String(email || "")
-    .trim()
-    .toLowerCase();
-}
-
-// ---------- file upload (documents) ----------
-const storage = multer.diskStorage({
-  destination: (req, file, cb) =>
-    cb(null, path.join(__dirname, "public", "uploads")),
-  filename: (req, file, cb) => {
-    const safe = Date.now() + "-" + file.originalname.replace(/[^\w.\-]/g, "_");
-    cb(null, safe);
-  },
-});
-const upload = multer({ storage });
 
 // ---------- AUTH ----------
-app.post("/api/auth/register", async (req, res) => {
+async function registerUser(e) {
+  e.preventDefault();
+
+  const name = document.getElementById("name").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const role = document.getElementById("role").value;
+
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
+
   try {
-    const { name, email, password, role } = req.body || {};
-    const cleanEmail = normalizeEmail(email);
-
-    if (!name || !cleanEmail || !password || !role)
-      return res.status(400).json({ message: "Missing fields" });
-    if (!["HR", "EMPLOYEE"].includes(role))
-      return res.status(400).json({ message: "Invalid role" });
-
-    const p = await getPool();
-
-    const exists = await p
-      .request()
-      .input("Email", sql.NVarChar, cleanEmail)
-      .query("SELECT UserId FROM Users WHERE Email=@Email");
-
-    if (exists.recordset.length)
-      return res.status(409).json({ message: "Email already registered" });
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    await p
-      .request()
-      .input("Name", sql.NVarChar, String(name).trim())
-      .input("Email", sql.NVarChar, cleanEmail)
-      .input("PasswordHash", sql.NVarChar, passwordHash)
-      .input("Role", sql.NVarChar, role)
-      .query(
-        "INSERT INTO Users (Name, Email, PasswordHash, Role) VALUES (@Name, @Email, @PasswordHash, @Role)",
-      );
-
-    return res.status(201).json({ message: "Registered successfully" });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    const cleanEmail = normalizeEmail(email);
-    if (!cleanEmail || !password)
-      return res.status(400).json({ message: "Missing email/password" });
-
-    const p = await getPool();
-    const result = await p
-      .request()
-      .input("Email", sql.NVarChar, cleanEmail)
-      .query(
-        "SELECT UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email",
-      );
-
-    const user = result.recordset[0];
-    if (!user) return res.status(401).json({ message: "Invalid credentials" });
-
-    const ok = await bcrypt.compare(password, user.PasswordHash);
-    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
-
-    const token = jwt.sign(
-      {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
-      },
-      JWT_SECRET,
-      { expiresIn: "2h" },
-    );
-
-    return res.json({
-      token,
-      user: {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
-      },
+    await api("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password, role }),
     });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Server error" });
+
+    msg.textContent = "Registered! Redirecting to login...";
+    msg.style.color = "green";
+
+    setTimeout(() => (window.location.href = "/login.html"), 800);
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
   }
-});
+}
 
-app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
+async function loginUser(e) {
+  e.preventDefault();
 
-app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
-  res.json({ message: "Hello HR ✅" }),
-);
-app.get(
-  "/api/employee/ping",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  (req, res) => res.json({ message: "Hello Employee ✅" }),
-);
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
 
-// ---------- CHECKLIST (Employee) ----------
-app.get(
-  "/api/checklist",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
-      await p.request().input("UserId", sql.Int, req.user.userId).query(`
-        INSERT INTO UserChecklist (UserId, ItemId)
-        SELECT @UserId, c.ItemId
-        FROM ChecklistItems c
-        WHERE c.IsActive=1
-          AND NOT EXISTS (
-            SELECT 1 FROM UserChecklist uc
-            WHERE uc.UserId=@UserId AND uc.ItemId=c.ItemId
-          )
-      `);
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
 
-      const items = await p.request().input("UserId", sql.Int, req.user.userId)
-        .query(`
-        SELECT c.ItemId, c.Title, c.Stage, c.Description,
-               uc.Status, uc.UpdatedAt
-        FROM ChecklistItems c
-        JOIN UserChecklist uc ON uc.ItemId=c.ItemId AND uc.UserId=@UserId
-        WHERE c.IsActive=1
-        ORDER BY
-          CASE c.Stage WHEN 'DAY1' THEN 1 WHEN 'WEEK1' THEN 2 ELSE 3 END,
-          c.ItemId
-      `);
+  try {
+    const data = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
 
-      res.json({ items: items.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+    saveToken(data.token);
+
+    if (data.user.role === "HR") window.location.href = "/hr.html";
+    else window.location.href = "/employee.html";
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
+
+async function loadDashboard(roleExpected) {
+  const status = document.getElementById("status");
+  const who = document.getElementById("who");
+
+  try {
+    const me = await api("/api/me");
+    who.textContent = `${me.user.name} (${me.user.role})`;
+
+    if (me.user.role !== roleExpected) {
+      status.textContent = "Access denied: wrong role.";
+      status.style.color = "crimson";
+      return;
     }
-  },
-);
 
-app.patch(
-  "/api/checklist/:itemId",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  async (req, res) => {
-    try {
-      const itemId = Number(req.params.itemId);
-      const { status } = req.body || {};
-      if (!["PENDING", "DONE"].includes(status))
-        return res.status(400).json({ message: "Invalid status" });
-
-      const p = await getPool();
-      await p
-        .request()
-        .input("UserId", sql.Int, req.user.userId)
-        .input("ItemId", sql.Int, itemId)
-        .input("Status", sql.NVarChar, status).query(`
-        UPDATE UserChecklist
-        SET Status=@Status, UpdatedAt=SYSDATETIME()
-        WHERE UserId=@UserId AND ItemId=@ItemId
-      `);
-
-      res.json({ message: "Updated" });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+    const pingPath = roleExpected === "HR" ? "/api/hr/ping" : "/api/employee/ping";
+    const ping = await api(pingPath);
+    status.textContent = ping.message;
+    status.style.color = "green";
+  } catch (err) {
+    if (status) {
+      status.textContent = "Please log in again.";
+      status.style.color = "crimson";
     }
-  },
-);
+    clearToken();
+    setTimeout(() => (window.location.href = "/login.html"), 700);
+  }
+}
 
-// ---------- DOCUMENTS (Employee upload + view) ----------
-app.post(
-  "/api/documents/upload",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  upload.single("file"),
-  async (req, res) => {
-    try {
-      const { docType } = req.body || {};
-      if (!docType) return res.status(400).json({ message: "Missing docType" });
-      if (!req.file) return res.status(400).json({ message: "Missing file" });
+function logout() {
+  clearToken();
+  window.location.href = "/index.html";
+}
 
-      const fileUrl = `/uploads/${req.file.filename}`;
-      const p = await getPool();
+// ---------- CHECKLIST ----------
+async function loadChecklistPage() {
+  const list = document.getElementById("checklistList");
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
 
-      await p
-        .request()
-        .input("UserId", sql.Int, req.user.userId)
-        .input("DocType", sql.NVarChar, docType)
-        .input("FileUrl", sql.NVarChar, fileUrl).query(`
-        INSERT INTO Documents (UserId, DocType, FileUrl)
-        VALUES (@UserId, @DocType, @FileUrl)
-      `);
+  try {
+    const data = await api("/api/checklist");
+    list.innerHTML = "";
 
-      res.json({ message: "Uploaded", fileUrl });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+    for (const it of data.items) {
+      const row = document.createElement("div");
+      row.className = "mock-item";
+      row.innerHTML = `
+        <div>
+          <div style="font-weight:800">${it.Title}
+            <span class="pill" style="margin-left:8px">${it.Stage}</span>
+          </div>
+          <div style="color:#475569;font-size:13px">${it.Description || ""}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge">${it.Status}</span>
+          <button class="btn ${it.Status === "DONE" ? "" : "btn-primary"}">
+            ${it.Status === "DONE" ? "Mark Pending" : "Mark Done"}
+          </button>
+        </div>
+      `;
+
+      row.querySelector("button").addEventListener("click", async () => {
+        const newStatus = it.Status === "DONE" ? "PENDING" : "DONE";
+        await api(`/api/checklist/${it.ItemId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: newStatus }),
+        });
+        loadChecklistPage();
+      });
+
+      list.appendChild(row);
     }
-  },
-);
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
 
-app.get(
-  "/api/documents/my",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
-      const docs = await p.request().input("UserId", sql.Int, req.user.userId)
-        .query(`
-        SELECT DocId, DocType, FileUrl, Status, HRComment, UploadedAt
-        FROM Documents
-        WHERE UserId=@UserId
-        ORDER BY UploadedAt DESC
-      `);
+// ---------- DOCUMENTS (Employee) ----------
+async function loadMyDocuments() {
+  const tbody = document.getElementById("docsTbody");
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
 
-      res.json({ documents: docs.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+  try {
+    const data = await api("/api/documents/my");
+    tbody.innerHTML = "";
+
+    for (const d of data.documents) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${d.DocType}</td>
+        <td><a href="${d.FileUrl}" target="_blank" style="text-decoration:underline">View</a></td>
+        <td>${d.Status}</td>
+        <td>${d.HRComment || "-"}</td>
+      `;
+      tbody.appendChild(tr);
     }
-  },
-);
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
 
-// ---------- DOCUMENTS (HR review) ----------
-app.get(
-  "/api/hr/documents/pending",
-  authRequired,
-  roleRequired("HR"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
-      const docs = await p.request().query(`
-      SELECT d.DocId, d.DocType, d.FileUrl, d.Status, d.HRComment, d.UploadedAt,
-             u.UserId, u.Name, u.Email
-      FROM Documents d
-      JOIN Users u ON u.UserId=d.UserId
-      WHERE d.Status='PENDING'
-      ORDER BY d.UploadedAt ASC
-    `);
+async function uploadDoc(e) {
+  e.preventDefault();
 
-      res.json({ documents: docs.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
+
+  const docType = document.getElementById("docType").value;
+  const file = document.getElementById("docFile").files[0];
+
+  if (!file) {
+    msg.textContent = "Please choose a file.";
+    msg.style.color = "crimson";
+    return;
+  }
+
+  try {
+    const fd = new FormData();
+    fd.append("docType", docType);
+    fd.append("file", file);
+
+    await api("/api/documents/upload", { method: "POST", body: fd });
+
+    msg.textContent = "Uploaded!";
+    msg.style.color = "green";
+    document.getElementById("docFile").value = "";
+    loadMyDocuments();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
+
+// ---------- DOCUMENTS (HR) ----------
+async function loadPendingDocsHR() {
+  const tbody = document.getElementById("pendingTbody");
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
+
+  try {
+    const data = await api("/api/hr/documents/pending");
+    tbody.innerHTML = "";
+
+    for (const d of data.documents) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${d.Name}</td>
+        <td>${d.DocType}</td>
+        <td><a href="${d.FileUrl}" target="_blank" style="text-decoration:underline">View</a></td>
+        <td>
+          <input id="c-${d.DocId}" placeholder="Comment (optional)"
+            style="padding:8px;border-radius:10px;border:1px solid var(--border);width:220px;">
+        </td>
+        <td style="display:flex;gap:8px">
+          <button class="btn btn-primary" data-act="APPROVED" data-id="${d.DocId}">Approve</button>
+          <button class="btn" data-act="REJECTED" data-id="${d.DocId}">Reject</button>
+        </td>
+      `;
+
+      tr.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const docId = btn.dataset.id;
+          const status = btn.dataset.act;
+          const comment = document.getElementById(`c-${docId}`).value;
+
+          await api(`/api/hr/documents/${docId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status, comment }),
+          });
+
+          loadPendingDocsHR();
+        });
+      });
+
+      tbody.appendChild(tr);
     }
-  },
-);
-
-app.patch(
-  "/api/hr/documents/:docId",
-  authRequired,
-  roleRequired("HR"),
-  async (req, res) => {
-    try {
-      const docId = Number(req.params.docId);
-      const { status, comment } = req.body || {};
-      if (!["APPROVED", "REJECTED"].includes(status))
-        return res.status(400).json({ message: "Invalid status" });
-
-      const p = await getPool();
-      await p
-        .request()
-        .input("DocId", sql.Int, docId)
-        .input("Status", sql.NVarChar, status)
-        .input("Comment", sql.NVarChar, comment || null).query(`
-        UPDATE Documents
-        SET Status=@Status, HRComment=@Comment
-        WHERE DocId=@DocId
-      `);
-
-      res.json({ message: "Updated" });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
-    }
-  },
-);
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
 
 // ---------- TRAININGS ----------
-app.get(
-  "/api/trainings",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
+async function loadTrainingsPage() {
+  const tbody = document.getElementById("trainTbody");
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
 
-      // auto-assign all trainings to user (prototype)
-      await p.request().input("UserId", sql.Int, req.user.userId).query(`
-        INSERT INTO UserTraining (UserId, TrainingId)
-        SELECT @UserId, t.TrainingId
-        FROM Trainings t
-        WHERE NOT EXISTS (
-          SELECT 1 FROM UserTraining ut
-          WHERE ut.UserId=@UserId AND ut.TrainingId=t.TrainingId
-        )
-      `);
+  try {
+    const data = await api("/api/trainings");
+    tbody.innerHTML = "";
 
-      const rows = await p.request().input("UserId", sql.Int, req.user.userId)
-        .query(`
-        SELECT t.TrainingId, t.Title, t.StartsAt, t.Location, t.Notes,
-               ut.Attendance
-        FROM Trainings t
-        JOIN UserTraining ut ON ut.TrainingId=t.TrainingId AND ut.UserId=@UserId
-        ORDER BY t.StartsAt ASC
-      `);
+    for (const t of data.trainings) {
+      const tr = document.createElement("tr");
+      const dt = new Date(t.StartsAt).toLocaleString();
 
-      res.json({ trainings: rows.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
+      tr.innerHTML = `
+        <td>${t.Title}</td>
+        <td>${dt}</td>
+        <td>${t.Location || "-"}</td>
+        <td>${t.Attendance}</td>
+        <td>
+          <button class="btn ${t.Attendance === "ATTENDED" ? "" : "btn-primary"}">
+            ${t.Attendance === "ATTENDED" ? "Mark Upcoming" : "Mark Attended"}
+          </button>
+        </td>
+      `;
+
+      tr.querySelector("button").addEventListener("click", async () => {
+        const newVal = t.Attendance === "ATTENDED" ? "UPCOMING" : "ATTENDED";
+        await api(`/api/trainings/${t.TrainingId}/attendance`, {
+          method: "PATCH",
+          body: JSON.stringify({ attendance: newVal }),
+        });
+        loadTrainingsPage();
+      });
+
+      tbody.appendChild(tr);
     }
-  },
-);
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
 
-app.patch(
-  "/api/trainings/:trainingId/attendance",
-  authRequired,
-  roleRequired("EMPLOYEE"),
-  async (req, res) => {
-    try {
-      const trainingId = Number(req.params.trainingId);
-      const { attendance } = req.body || {};
-      if (!["UPCOMING", "ATTENDED"].includes(attendance))
-        return res.status(400).json({ message: "Invalid attendance" });
+async function createTraining(e) {
+  e.preventDefault();
 
-      const p = await getPool();
-      await p
-        .request()
-        .input("UserId", sql.Int, req.user.userId)
-        .input("TrainingId", sql.Int, trainingId)
-        .input("Attendance", sql.NVarChar, attendance).query(`
-        UPDATE UserTraining
-        SET Attendance=@Attendance
-        WHERE UserId=@UserId AND TrainingId=@TrainingId
-      `);
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
 
-      res.json({ message: "Updated" });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
-    }
-  },
-);
+  const title = document.getElementById("tTitle").value.trim();
+  const startsAt = document.getElementById("tStartsAt").value;
+  const location = document.getElementById("tLocation").value.trim();
+  const notes = document.getElementById("tNotes").value.trim();
 
-// HR create training
-app.post(
-  "/api/hr/trainings",
-  authRequired,
-  roleRequired("HR"),
-  async (req, res) => {
-    try {
-      const { title, startsAt, location, notes } = req.body || {};
-      if (!title || !startsAt)
-        return res.status(400).json({ message: "Missing title/startsAt" });
+  try {
+    await api("/api/hr/trainings", {
+      method: "POST",
+      body: JSON.stringify({ title, startsAt, location, notes }),
+    });
 
-      const p = await getPool();
-      await p
-        .request()
-        .input("Title", sql.NVarChar, title)
-        .input("StartsAt", sql.DateTime2, new Date(startsAt))
-        .input("Location", sql.NVarChar, location || null)
-        .input("Notes", sql.NVarChar, notes || null).query(`
-        INSERT INTO Trainings (Title, StartsAt, Location, Notes)
-        VALUES (@Title, @StartsAt, @Location, @Notes)
-      `);
-
-      res.status(201).json({ message: "Training created" });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
-    }
-  },
-);
-
-app.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`),
-);
+    msg.textContent = "Training created!";
+    msg.style.color = "green";
+    e.target.reset();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.style.color = "crimson";
+  }
+}
