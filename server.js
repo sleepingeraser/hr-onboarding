@@ -699,6 +699,141 @@ app.patch(
   },
 );
 
+// ---------- ANNOUNCEMENTS ----------
+app.get("/api/announcements", authRequired, async (req, res) => {
+  try {
+    const role = req.user?.role || "EMPLOYEE";
+    const p = await getPool();
+
+    const rows = await p.request().input("Role", sql.NVarChar, role).query(`
+        SELECT AnnouncementId, Title, Body, Audience, CreatedAt
+        FROM Announcements
+        WHERE Audience='ALL' OR Audience=@Role
+        ORDER BY CreatedAt DESC
+      `);
+
+    res.json({ announcements: rows.recordset });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// HR: create announcement
+app.post(
+  "/api/hr/announcements",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const { title, body, audience = "ALL" } = req.body || {};
+      if (!title || !body)
+        return res.status(400).json({ message: "Missing title/body" });
+      if (!["ALL", "EMPLOYEE", "HR"].includes(audience))
+        return res.status(400).json({ message: "Invalid audience" });
+
+      const p = await getPool();
+      await p
+        .request()
+        .input("Title", sql.NVarChar, title.trim())
+        .input("Body", sql.NVarChar, body)
+        .input("Audience", sql.NVarChar, audience)
+        .input("CreatedByUserId", sql.Int, req.user.userId).query(`
+        INSERT INTO Announcements (Title, Body, Audience, CreatedByUserId)
+        VALUES (@Title, @Body, @Audience, @CreatedByUserId)
+      `);
+
+      res.status(201).json({ message: "Announcement posted" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: delete announcement
+app.delete(
+  "/api/hr/announcements/:id",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const p = await getPool();
+      await p
+        .request()
+        .input("Id", sql.Int, id)
+        .query(`DELETE FROM Announcements WHERE AnnouncementId=@Id`);
+      res.json({ message: "Deleted" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// ---------- FAQ ----------
+app.get("/api/faqs", authRequired, async (req, res) => {
+  try {
+    const p = await getPool();
+    const rows = await p.request().query(`
+      SELECT FaqId, Question, Answer, Category
+      FROM FAQs
+      WHERE IsActive=1
+      ORDER BY Category ASC, CreatedAt DESC
+    `);
+    res.json({ faqs: rows.recordset });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// HR: create FAQ
+app.post("/api/hr/faqs", authRequired, roleRequired("HR"), async (req, res) => {
+  try {
+    const { question, answer, category } = req.body || {};
+    if (!question || !answer)
+      return res.status(400).json({ message: "Missing question/answer" });
+
+    const p = await getPool();
+    await p
+      .request()
+      .input("Question", sql.NVarChar, question.trim())
+      .input("Answer", sql.NVarChar, answer)
+      .input("Category", sql.NVarChar, category || null).query(`
+        INSERT INTO FAQs (Question, Answer, Category)
+        VALUES (@Question, @Answer, @Category)
+      `);
+
+    res.status(201).json({ message: "FAQ created" });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// HR: deactivate FAQ
+app.patch(
+  "/api/hr/faqs/:id/deactivate",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const p = await getPool();
+      await p
+        .request()
+        .input("Id", sql.Int, id)
+        .query(`UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id`);
+      res.json({ message: "Deactivated" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
 app.listen(PORT, () =>
   console.log(`Server running on http://localhost:${PORT}`),
 );
