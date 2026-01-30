@@ -9,6 +9,10 @@ DROP TABLE IF EXISTS Trainings
 DROP TABLE IF EXISTS Documents
 DROP TABLE IF EXISTS UserChecklist
 DROP TABLE IF EXISTS ChecklistItems
+DROP TABLE IF EXISTS UserEquipment
+DROP TABLE IF EXISTS Equipment
+DROP TABLE IF EXISTS Announcements
+DROP TABLE IF EXISTS FAQs
 DROP TABLE IF EXISTS Users
 
 -- users table
@@ -53,7 +57,7 @@ CREATE TABLE Documents (
   FOREIGN KEY (UserId) REFERENCES Users(UserId)
 )
 
---trainings table
+-- trainings table
 CREATE TABLE Trainings (
   TrainingId INT IDENTITY(1,1) PRIMARY KEY,
   Title NVARCHAR(200) NOT NULL,
@@ -72,6 +76,53 @@ CREATE TABLE UserTraining (
   FOREIGN KEY (TrainingId) REFERENCES Trainings(TrainingId)
 )
 
+-- equipment table
+
+CREATE TABLE Equipment (
+  EquipmentId INT IDENTITY(1,1) PRIMARY KEY,
+  ItemName NVARCHAR(120) NOT NULL,
+  SerialNumber NVARCHAR(120) NULL,
+  Category NVARCHAR(50) NULL,
+  Status NVARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+  CreatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+)
+
+-- user equipment table
+CREATE TABLE UserEquipment (
+  AssignmentId INT IDENTITY(1,1) PRIMARY KEY,
+  UserId INT NOT NULL,
+  EquipmentId INT NOT NULL,
+  AssignedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+  DueBackAt DATETIME2 NULL,
+  Notes NVARCHAR(250) NULL,
+  EmployeeAck BIT NOT NULL DEFAULT 0,
+  ReturnedAt DATETIME2 NULL,
+
+  CONSTRAINT FK_UserEquipment_User FOREIGN KEY (UserId) REFERENCES Users(UserId),
+  CONSTRAINT FK_UserEquipment_Equipment FOREIGN KEY (EquipmentId) REFERENCES Equipment(EquipmentId)
+)
+
+-- announcements table
+CREATE TABLE Announcements (
+  AnnouncementId INT IDENTITY(1,1) PRIMARY KEY,
+  Title NVARCHAR(120) NOT NULL,
+  Body NVARCHAR(MAX) NOT NULL,
+  Audience NVARCHAR(20) NOT NULL DEFAULT 'ALL',
+  CreatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+  CreatedByUserId INT NULL,
+  CONSTRAINT FK_Announcements_User FOREIGN KEY (CreatedByUserId) REFERENCES Users(UserId)
+)
+
+-- faqs table
+CREATE TABLE FAQs (
+  FaqId INT IDENTITY(1,1) PRIMARY KEY,
+  Question NVARCHAR(200) NOT NULL,
+  Answer NVARCHAR(MAX) NOT NULL,
+  Category NVARCHAR(80) NULL, -- e.g. Leave, Payroll, IT
+  IsActive BIT NOT NULL DEFAULT 1,
+  CreatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+)
+
 -- insert sample data
 INSERT INTO ChecklistItems (Title, Stage, Description) VALUES
 ('Read company policies', 'DAY1', 'Review handbook + code of conduct'),
@@ -83,3 +134,15 @@ INSERT INTO ChecklistItems (Title, Stage, Description) VALUES
 INSERT INTO Trainings (Title, StartsAt, Location, Notes) VALUES
 ('Welcome + Orientation', DATEADD(day, 1, SYSDATETIME()), 'Room 3-02', 'Bring notebook'),
 ('Security & Compliance', DATEADD(day, 2, SYSDATETIME()), 'Zoom', 'Join link will be posted')
+
+INSERT INTO Equipment (ItemName, SerialNumber, Category) VALUES
+('Laptop - Dell Latitude', 'DL-100233', 'Laptop'),
+('Access Card', 'AC-99312', 'Access'),
+('Headset', 'HS-22001', 'Accessories');
+
+INSERT INTO FAQs (Question, Answer, Category) VALUES
+('Where do I collect my access card?', 'Collect from HR on Day 1, 9am-11am.', 'Access'),
+('Who do I contact for IT help?', 'Email IT Helpdesk or raise a ticket in the portal.', 'IT');
+
+INSERT INTO Announcements (Title, Body, Audience) VALUES
+('Welcome onboard!', 'Please complete your checklist and upload documents by end of Week 1.', 'ALL');
