@@ -43,7 +43,8 @@ async function getPool() {
 function authRequired(req, res, next) {
   const header = req.headers.authorization || "";
   const [type, token] = header.split(" ");
-  if (type !== "Bearer" || !token) return res.status(401).json({ message: "Missing or invalid token" });
+  if (type !== "Bearer" || !token)
+    return res.status(401).json({ message: "Missing or invalid token" });
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -55,18 +56,22 @@ function authRequired(req, res, next) {
 
 function roleRequired(role) {
   return (req, res, next) => {
-    if (!req.user?.role || req.user.role !== role) return res.status(403).json({ message: "Forbidden" });
+    if (!req.user?.role || req.user.role !== role)
+      return res.status(403).json({ message: "Forbidden" });
     next();
   };
 }
 
 function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
+  return String(email || "")
+    .trim()
+    .toLowerCase();
 }
 
 // ---------- file upload (documents) ----------
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, "public", "uploads")),
+  destination: (req, file, cb) =>
+    cb(null, path.join(__dirname, "public", "uploads")),
   filename: (req, file, cb) => {
     const safe = Date.now() + "-" + file.originalname.replace(/[^\w.\-]/g, "_");
     cb(null, safe);
@@ -80,25 +85,32 @@ app.post("/api/auth/register", async (req, res) => {
     const { name, email, password, role } = req.body || {};
     const cleanEmail = normalizeEmail(email);
 
-    if (!name || !cleanEmail || !password || !role) return res.status(400).json({ message: "Missing fields" });
-    if (!["HR", "EMPLOYEE"].includes(role)) return res.status(400).json({ message: "Invalid role" });
+    if (!name || !cleanEmail || !password || !role)
+      return res.status(400).json({ message: "Missing fields" });
+    if (!["HR", "EMPLOYEE"].includes(role))
+      return res.status(400).json({ message: "Invalid role" });
 
     const p = await getPool();
 
-    const exists = await p.request()
+    const exists = await p
+      .request()
       .input("Email", sql.NVarChar, cleanEmail)
       .query("SELECT UserId FROM Users WHERE Email=@Email");
 
-    if (exists.recordset.length) return res.status(409).json({ message: "Email already registered" });
+    if (exists.recordset.length)
+      return res.status(409).json({ message: "Email already registered" });
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    await p.request()
+    await p
+      .request()
       .input("Name", sql.NVarChar, String(name).trim())
       .input("Email", sql.NVarChar, cleanEmail)
       .input("PasswordHash", sql.NVarChar, passwordHash)
       .input("Role", sql.NVarChar, role)
-      .query("INSERT INTO Users (Name, Email, PasswordHash, Role) VALUES (@Name, @Email, @PasswordHash, @Role)");
+      .query(
+        "INSERT INTO Users (Name, Email, PasswordHash, Role) VALUES (@Name, @Email, @PasswordHash, @Role)",
+      );
 
     return res.status(201).json({ message: "Registered successfully" });
   } catch (e) {
@@ -111,12 +123,16 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const cleanEmail = normalizeEmail(email);
-    if (!cleanEmail || !password) return res.status(400).json({ message: "Missing email/password" });
+    if (!cleanEmail || !password)
+      return res.status(400).json({ message: "Missing email/password" });
 
     const p = await getPool();
-    const result = await p.request()
+    const result = await p
+      .request()
       .input("Email", sql.NVarChar, cleanEmail)
-      .query("SELECT UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email");
+      .query(
+        "SELECT UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email",
+      );
 
     const user = result.recordset[0];
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
@@ -125,14 +141,24 @@ app.post("/api/auth/login", async (req, res) => {
     if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
     const token = jwt.sign(
-      { userId: user.UserId, name: user.Name, email: user.Email, role: user.Role },
+      {
+        userId: user.UserId,
+        name: user.Name,
+        email: user.Email,
+        role: user.Role,
+      },
       JWT_SECRET,
-      { expiresIn: "2h" }
+      { expiresIn: "2h" },
     );
 
     return res.json({
       token,
-      user: { userId: user.UserId, name: user.Name, email: user.Email, role: user.Role },
+      user: {
+        userId: user.UserId,
+        name: user.Name,
+        email: user.Email,
+        role: user.Role,
+      },
     });
   } catch (e) {
     console.error(e);
@@ -142,18 +168,27 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 
-app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) => res.json({ message: "Hello HR ✅" }));
-app.get("/api/employee/ping", authRequired, roleRequired("EMPLOYEE"), (req, res) => res.json({ message: "Hello Employee ✅" }));
+app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
+  res.json({ message: "Hello HR ✅" }),
+);
+app.get(
+  "/api/employee/ping",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  (req, res) => res.json({ message: "Hello Employee ✅" }),
+);
 
 // ---------- CHECKLIST (Employee) ----------
-app.get("/api/checklist", authRequired, roleRequired("EMPLOYEE"), async (req, res) => {
-  try {
-    const p = await getPool();
+app.get(
+  "/api/checklist",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
 
-    // ensure rows exist in UserChecklist for this user (auto-assign all active items)
-    await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .query(`
+      // ensure rows exist in UserChecklist for this user (auto-assign all active items)
+      await p.request().input("UserId", sql.Int, req.user.userId).query(`
         INSERT INTO UserChecklist (UserId, ItemId)
         SELECT @UserId, c.ItemId
         FROM ChecklistItems c
@@ -164,9 +199,8 @@ app.get("/api/checklist", authRequired, roleRequired("EMPLOYEE"), async (req, re
           )
       `);
 
-    const items = await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .query(`
+      const items = await p.request().input("UserId", sql.Int, req.user.userId)
+        .query(`
         SELECT c.ItemId, c.Title, c.Stage, c.Description,
                uc.Status, uc.UpdatedAt
         FROM ChecklistItems c
@@ -177,87 +211,108 @@ app.get("/api/checklist", authRequired, roleRequired("EMPLOYEE"), async (req, re
           c.ItemId
       `);
 
-    res.json({ items: items.recordset });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ items: items.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
-app.patch("/api/checklist/:itemId", authRequired, roleRequired("EMPLOYEE"), async (req, res) => {
-  try {
-    const itemId = Number(req.params.itemId);
-    const { status } = req.body || {};
-    if (!["PENDING", "DONE"].includes(status)) return res.status(400).json({ message: "Invalid status" });
+app.patch(
+  "/api/checklist/:itemId",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const itemId = Number(req.params.itemId);
+      const { status } = req.body || {};
+      if (!["PENDING", "DONE"].includes(status))
+        return res.status(400).json({ message: "Invalid status" });
 
-    const p = await getPool();
-    await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("ItemId", sql.Int, itemId)
-      .input("Status", sql.NVarChar, status)
-      .query(`
+      const p = await getPool();
+      await p
+        .request()
+        .input("UserId", sql.Int, req.user.userId)
+        .input("ItemId", sql.Int, itemId)
+        .input("Status", sql.NVarChar, status).query(`
         UPDATE UserChecklist
         SET Status=@Status, UpdatedAt=SYSDATETIME()
         WHERE UserId=@UserId AND ItemId=@ItemId
       `);
 
-    res.json({ message: "Updated" });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ message: "Updated" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 // ---------- DOCUMENTS (Employee upload + view) ----------
-app.post("/api/documents/upload", authRequired, roleRequired("EMPLOYEE"), upload.single("file"), async (req, res) => {
-  try {
-    const { docType } = req.body || {};
-    if (!docType) return res.status(400).json({ message: "Missing docType" });
-    if (!req.file) return res.status(400).json({ message: "Missing file" });
+app.post(
+  "/api/documents/upload",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const { docType } = req.body || {};
+      if (!docType) return res.status(400).json({ message: "Missing docType" });
+      if (!req.file) return res.status(400).json({ message: "Missing file" });
 
-    const fileUrl = `/uploads/${req.file.filename}`;
-    const p = await getPool();
+      const fileUrl = `/uploads/${req.file.filename}`;
+      const p = await getPool();
 
-    await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("DocType", sql.NVarChar, docType)
-      .input("FileUrl", sql.NVarChar, fileUrl)
-      .query(`
+      await p
+        .request()
+        .input("UserId", sql.Int, req.user.userId)
+        .input("DocType", sql.NVarChar, docType)
+        .input("FileUrl", sql.NVarChar, fileUrl).query(`
         INSERT INTO Documents (UserId, DocType, FileUrl)
         VALUES (@UserId, @DocType, @FileUrl)
       `);
 
-    res.json({ message: "Uploaded", fileUrl });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ message: "Uploaded", fileUrl });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
-app.get("/api/documents/my", authRequired, roleRequired("EMPLOYEE"), async (req, res) => {
-  try {
-    const p = await getPool();
-    const docs = await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .query(`
+app.get(
+  "/api/documents/my",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const docs = await p.request().input("UserId", sql.Int, req.user.userId)
+        .query(`
         SELECT DocId, DocType, FileUrl, Status, HRComment, UploadedAt
         FROM Documents
         WHERE UserId=@UserId
         ORDER BY UploadedAt DESC
       `);
 
-    res.json({ documents: docs.recordset });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ documents: docs.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 // ---------- DOCUMENTS (HR review) ----------
-app.get("/api/hr/documents/pending", authRequired, roleRequired("HR"), async (req, res) => {
-  try {
-    const p = await getPool();
-    const docs = await p.request().query(`
+app.get(
+  "/api/hr/documents/pending",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const docs = await p.request().query(`
       SELECT d.DocId, d.DocType, d.FileUrl, d.Status, d.HRComment, d.UploadedAt,
              u.UserId, u.Name, u.Email
       FROM Documents d
@@ -266,46 +321,55 @@ app.get("/api/hr/documents/pending", authRequired, roleRequired("HR"), async (re
       ORDER BY d.UploadedAt ASC
     `);
 
-    res.json({ documents: docs.recordset });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ documents: docs.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
-app.patch("/api/hr/documents/:docId", authRequired, roleRequired("HR"), async (req, res) => {
-  try {
-    const docId = Number(req.params.docId);
-    const { status, comment } = req.body || {};
-    if (!["APPROVED", "REJECTED"].includes(status)) return res.status(400).json({ message: "Invalid status" });
+app.patch(
+  "/api/hr/documents/:docId",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const docId = Number(req.params.docId);
+      const { status, comment } = req.body || {};
+      if (!["APPROVED", "REJECTED"].includes(status))
+        return res.status(400).json({ message: "Invalid status" });
 
-    const p = await getPool();
-    await p.request()
-      .input("DocId", sql.Int, docId)
-      .input("Status", sql.NVarChar, status)
-      .input("Comment", sql.NVarChar, comment || null)
-      .query(`
+      const p = await getPool();
+      await p
+        .request()
+        .input("DocId", sql.Int, docId)
+        .input("Status", sql.NVarChar, status)
+        .input("Comment", sql.NVarChar, comment || null).query(`
         UPDATE Documents
         SET Status=@Status, HRComment=@Comment
         WHERE DocId=@DocId
       `);
 
-    res.json({ message: "Updated" });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ message: "Updated" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 // ---------- TRAININGS ----------
-app.get("/api/trainings", authRequired, roleRequired("EMPLOYEE"), async (req, res) => {
-  try {
-    const p = await getPool();
+app.get(
+  "/api/trainings",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
 
-    // auto-assign all trainings to user (prototype)
-    await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .query(`
+      // auto-assign all trainings to user (prototype)
+      await p.request().input("UserId", sql.Int, req.user.userId).query(`
         INSERT INTO UserTraining (UserId, TrainingId)
         SELECT @UserId, t.TrainingId
         FROM Trainings t
@@ -315,9 +379,8 @@ app.get("/api/trainings", authRequired, roleRequired("EMPLOYEE"), async (req, re
         )
       `);
 
-    const rows = await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .query(`
+      const rows = await p.request().input("UserId", sql.Int, req.user.userId)
+        .query(`
         SELECT t.TrainingId, t.Title, t.StartsAt, t.Location, t.Notes,
                ut.Attendance
         FROM Trainings t
@@ -325,59 +388,317 @@ app.get("/api/trainings", authRequired, roleRequired("EMPLOYEE"), async (req, re
         ORDER BY t.StartsAt ASC
       `);
 
-    res.json({ trainings: rows.recordset });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ trainings: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
-app.patch("/api/trainings/:trainingId/attendance", authRequired, roleRequired("EMPLOYEE"), async (req, res) => {
-  try {
-    const trainingId = Number(req.params.trainingId);
-    const { attendance } = req.body || {};
-    if (!["UPCOMING", "ATTENDED"].includes(attendance)) return res.status(400).json({ message: "Invalid attendance" });
+app.patch(
+  "/api/trainings/:trainingId/attendance",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const trainingId = Number(req.params.trainingId);
+      const { attendance } = req.body || {};
+      if (!["UPCOMING", "ATTENDED"].includes(attendance))
+        return res.status(400).json({ message: "Invalid attendance" });
 
-    const p = await getPool();
-    await p.request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("TrainingId", sql.Int, trainingId)
-      .input("Attendance", sql.NVarChar, attendance)
-      .query(`
+      const p = await getPool();
+      await p
+        .request()
+        .input("UserId", sql.Int, req.user.userId)
+        .input("TrainingId", sql.Int, trainingId)
+        .input("Attendance", sql.NVarChar, attendance).query(`
         UPDATE UserTraining
         SET Attendance=@Attendance
         WHERE UserId=@UserId AND TrainingId=@TrainingId
       `);
 
-    res.json({ message: "Updated" });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.json({ message: "Updated" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 // HR create training
-app.post("/api/hr/trainings", authRequired, roleRequired("HR"), async (req, res) => {
-  try {
-    const { title, startsAt, location, notes } = req.body || {};
-    if (!title || !startsAt) return res.status(400).json({ message: "Missing title/startsAt" });
+app.post(
+  "/api/hr/trainings",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const { title, startsAt, location, notes } = req.body || {};
+      if (!title || !startsAt)
+        return res.status(400).json({ message: "Missing title/startsAt" });
 
-    const p = await getPool();
-    await p.request()
-      .input("Title", sql.NVarChar, title)
-      .input("StartsAt", sql.DateTime2, new Date(startsAt))
-      .input("Location", sql.NVarChar, location || null)
-      .input("Notes", sql.NVarChar, notes || null)
-      .query(`
+      const p = await getPool();
+      await p
+        .request()
+        .input("Title", sql.NVarChar, title)
+        .input("StartsAt", sql.DateTime2, new Date(startsAt))
+        .input("Location", sql.NVarChar, location || null)
+        .input("Notes", sql.NVarChar, notes || null).query(`
         INSERT INTO Trainings (Title, StartsAt, Location, Notes)
         VALUES (@Title, @StartsAt, @Location, @Notes)
       `);
 
-    res.status(201).json({ message: "Training created" });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+      res.status(201).json({ message: "Training created" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// ---------- EQUIPMENT ----------
+
+// HR: create equipment
+app.post(
+  "/api/hr/equipment",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const { itemName, serialNumber, category } = req.body || {};
+      if (!itemName)
+        return res.status(400).json({ message: "Missing itemName" });
+
+      const p = await getPool();
+      await p
+        .request()
+        .input("ItemName", sql.NVarChar, itemName.trim())
+        .input("SerialNumber", sql.NVarChar, serialNumber || null)
+        .input("Category", sql.NVarChar, category || null).query(`
+        INSERT INTO Equipment (ItemName, SerialNumber, Category)
+        VALUES (@ItemName, @SerialNumber, @Category)
+      `);
+
+      res.status(201).json({ message: "Equipment created" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: list equipment
+app.get(
+  "/api/hr/equipment",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+      SELECT EquipmentId, ItemName, SerialNumber, Category, Status, CreatedAt
+      FROM Equipment
+      ORDER BY CreatedAt DESC
+    `);
+      res.json({ equipment: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: list employees (for assignment dropdown)
+app.get(
+  "/api/hr/employees",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+      SELECT UserId, Name, Email
+      FROM Users
+      WHERE Role='EMPLOYEE'
+      ORDER BY Name ASC
+    `);
+      res.json({ employees: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: assign equipment to employee
+app.post(
+  "/api/hr/equipment/assign",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const { userId, equipmentId, dueBackAt, notes } = req.body || {};
+      const uid = Number(userId);
+      const eid = Number(equipmentId);
+      if (!uid || !eid)
+        return res.status(400).json({ message: "Missing userId/equipmentId" });
+
+      const p = await getPool();
+
+      // must be available
+      const eq = await p
+        .request()
+        .input("EquipmentId", sql.Int, eid)
+        .query(`SELECT Status FROM Equipment WHERE EquipmentId=@EquipmentId`);
+      if (!eq.recordset.length)
+        return res.status(404).json({ message: "Equipment not found" });
+      if (eq.recordset[0].Status !== "AVAILABLE")
+        return res.status(409).json({ message: "Equipment not available" });
+
+      // create assignment + mark assigned
+      await p
+        .request()
+        .input("UserId", sql.Int, uid)
+        .input("EquipmentId", sql.Int, eid)
+        .input(
+          "DueBackAt",
+          sql.DateTime2,
+          dueBackAt ? new Date(dueBackAt) : null,
+        )
+        .input("Notes", sql.NVarChar, notes || null).query(`
+        INSERT INTO UserEquipment (UserId, EquipmentId, DueBackAt, Notes)
+        VALUES (@UserId, @EquipmentId, @DueBackAt, @Notes);
+
+        UPDATE Equipment SET Status='ASSIGNED' WHERE EquipmentId=@EquipmentId;
+      `);
+
+      res.status(201).json({ message: "Assigned" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: view assignments
+app.get(
+  "/api/hr/equipment/assignments",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+      SELECT ue.AssignmentId, ue.AssignedAt, ue.DueBackAt, ue.Notes, ue.EmployeeAck, ue.ReturnedAt,
+             u.UserId, u.Name, u.Email,
+             e.EquipmentId, e.ItemName, e.SerialNumber, e.Category
+      FROM UserEquipment ue
+      JOIN Users u ON u.UserId=ue.UserId
+      JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
+      ORDER BY ue.AssignedAt DESC
+    `);
+      res.json({ assignments: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: mark returned
+app.patch(
+  "/api/hr/equipment/assignments/:assignmentId/return",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const assignmentId = Number(req.params.assignmentId);
+      if (!assignmentId)
+        return res.status(400).json({ message: "Invalid assignmentId" });
+
+      const p = await getPool();
+
+      const row = await p
+        .request()
+        .input("AssignmentId", sql.Int, assignmentId)
+        .query(
+          `SELECT EquipmentId, ReturnedAt FROM UserEquipment WHERE AssignmentId=@AssignmentId`,
+        );
+      if (!row.recordset.length)
+        return res.status(404).json({ message: "Not found" });
+      if (row.recordset[0].ReturnedAt)
+        return res.status(409).json({ message: "Already returned" });
+
+      const equipmentId = row.recordset[0].EquipmentId;
+
+      await p
+        .request()
+        .input("AssignmentId", sql.Int, assignmentId)
+        .input("EquipmentId", sql.Int, equipmentId).query(`
+        UPDATE UserEquipment SET ReturnedAt=SYSDATETIME() WHERE AssignmentId=@AssignmentId;
+        UPDATE Equipment SET Status='AVAILABLE' WHERE EquipmentId=@EquipmentId;
+      `);
+
+      res.json({ message: "Returned" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// employee: view my assigned equipment
+app.get(
+  "/api/equipment/my",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().input("UserId", sql.Int, req.user.userId)
+        .query(`
+        SELECT ue.AssignmentId, ue.AssignedAt, ue.DueBackAt, ue.Notes, ue.EmployeeAck, ue.ReturnedAt,
+               e.ItemName, e.SerialNumber, e.Category
+        FROM UserEquipment ue
+        JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
+        WHERE ue.UserId=@UserId
+        ORDER BY ue.AssignedAt DESC
+      `);
+
+      res.json({ equipment: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// employee: acknowledge receipt
+app.patch(
+  "/api/equipment/my/:assignmentId/ack",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  async (req, res) => {
+    try {
+      const assignmentId = Number(req.params.assignmentId);
+      const p = await getPool();
+      await p
+        .request()
+        .input("AssignmentId", sql.Int, assignmentId)
+        .input("UserId", sql.Int, req.user.userId).query(`
+        UPDATE UserEquipment
+        SET EmployeeAck=1
+        WHERE AssignmentId=@AssignmentId AND UserId=@UserId
+      `);
+
+      res.json({ message: "Acknowledged" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+app.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`),
+);
