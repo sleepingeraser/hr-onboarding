@@ -83,3 +83,4 @@ INSERT INTO ChecklistItems (Title, Stage, Description) VALUES
 INSERT INTO Trainings (Title, StartsAt, Location, Notes) VALUES
 ('Welcome + Orientation', DATEADD(day, 1, SYSDATETIME()), 'Room 3-02', 'Bring notebook'),
 ('Security & Compliance', DATEADD(day, 2, SYSDATETIME()), 'Zoom', 'Join link will be posted')
+
