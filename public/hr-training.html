@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>HR Training Setup</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+
+  <body class="has-bg bg-hr">
+    <header class="container">
+      <nav class="nav">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <div>HR • Training Setup</div>
+        </div>
+        <div class="nav-links">
+          <a class="btn btn-ghost" href="/hr.html">← Dashboard</a>
+          <button class="btn" onclick="logout()">Logout</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="hero" style="grid-template-columns: 1fr">
+        <div class="hero-card">
+          <div class="mock-top">
+            <div style="font-weight: 900">Create Training Session</div>
+            <span class="pill">HR</span>
+          </div>
+
+          <form
+            onsubmit="createTraining(event)"
+            style="display: grid; gap: 10px"
+          >
+            <input
+              id="tTitle"
+              placeholder="Title"
+              required
+              style="
+                padding: 12px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+              "
+            />
+
+            <input
+              id="tStartsAt"
+              type="datetime-local"
+              required
+              style="
+                padding: 12px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+              "
+            />
+
+            <input
+              id="tLocation"
+              placeholder="Location"
+              style="
+                padding: 12px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+              "
+            />
+
+            <textarea
+              id="tNotes"
+              placeholder="Notes"
+              style="
+                padding: 12px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+              "
+            ></textarea>
+
+            <button class="btn btn-primary" type="submit">Create</button>
+            <p id="msg"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer></footer>
+
+    <script src="/js/app.js"></script>
+  </body>
+</html>
