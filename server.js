@@ -79,6 +79,27 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// HR list trainings (for HR dashboard preview)
+app.get(
+  "/api/hr/trainings",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+        SELECT TOP 50 TrainingId, Title, StartsAt, Location, Notes
+        FROM Trainings
+        ORDER BY StartsAt DESC
+      `);
+      res.json({ trainings: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
 // ---------- AUTH ----------
 app.post("/api/auth/register", async (req, res) => {
   try {
