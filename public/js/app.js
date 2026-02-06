@@ -30,6 +30,14 @@ async function api(path, options = {}) {
   return data;
 }
 
+// simple date formatting
+function fmtDT(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
+}
+
 // ---------------- AUTH ----------------
 async function registerUser(e) {
   e.preventDefault();
@@ -115,6 +123,11 @@ async function loadDashboard(roleExpected) {
       status.textContent = ping.message;
       status.style.color = "green";
     }
+
+    // if HR dashboard has extra sections (pending docs preview + training preview), load them
+    if (roleExpected === "HR") {
+      await loadHRHomeSections();
+    }
   } catch (err) {
     if (status) {
       status.textContent = "Session expired. Please log in again.";
@@ -128,6 +141,82 @@ async function loadDashboard(roleExpected) {
 function logout() {
   clearToken();
   window.location.href = "/index.html";
+}
+
+// ---------------- HR HOME SECTIONS (NEW) ----------------
+async function loadHRHomeSections() {
+  const pendingTbody = document.getElementById("hrPendingPreviewTbody");
+  const pendingMsg = document.getElementById("hrPendingPreviewMsg");
+
+  const trainTbody = document.getElementById("hrTrainPreviewTbody");
+  const trainMsg = document.getElementById("hrTrainPreviewMsg");
+
+  if (!pendingTbody && !trainTbody) return;
+
+  // pending documents preview
+  if (pendingTbody) {
+    try {
+      if (pendingMsg) pendingMsg.textContent = "";
+
+      const data = await api("/api/hr/documents/pending");
+      const docs = data.documents || [];
+
+      pendingTbody.innerHTML = "";
+
+      for (const d of docs.slice(0, 5)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${d.Name}</td>
+          <td>${d.DocType}</td>
+          <td>${fmtDT(d.UploadedAt)}</td>
+        `;
+        pendingTbody.appendChild(tr);
+      }
+
+      if (!docs.length) {
+        pendingTbody.innerHTML = `<tr><td colspan="3">No pending documents 🎉</td></tr>`;
+      } else if (docs.length > 5 && pendingMsg) {
+        pendingMsg.textContent = `Showing 5 of ${docs.length}. Open full review for all.`;
+      }
+    } catch (err) {
+      if (pendingMsg) {
+        pendingMsg.textContent = err.message;
+        pendingMsg.style.color = "crimson";
+      }
+    }
+  }
+
+  // trainings preview (HR list)
+  if (trainTbody) {
+    try {
+      if (trainMsg) trainMsg.textContent = "";
+
+      // requires the new backend endpoint: GET /api/hr/trainings
+      const data = await api("/api/hr/trainings");
+      const trainings = data.trainings || [];
+
+      trainTbody.innerHTML = "";
+
+      for (const t of trainings.slice(0, 5)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${t.Title}</td>
+          <td>${fmtDT(t.StartsAt)}</td>
+          <td>${t.Location || "-"}</td>
+        `;
+        trainTbody.appendChild(tr);
+      }
+
+      if (!trainings.length) {
+        trainTbody.innerHTML = `<tr><td colspan="3">No trainings created yet.</td></tr>`;
+      }
+    } catch (err) {
+      if (trainMsg) {
+        trainMsg.textContent = err.message;
+        trainMsg.style.color = "crimson";
+      }
+    }
+  }
 }
 
 // ---------------- CHECKLIST ----------------
@@ -370,6 +459,9 @@ async function createTraining(e) {
       msg.style.color = "green";
     }
     e.target.reset();
+
+    //refresh HR dashboard preview table if you're on hr.html
+    await loadHRHomeSections();
   } catch (err) {
     if (msg) {
       msg.textContent = err.message;
@@ -462,7 +554,9 @@ async function loadEquipmentForAssign() {
   sel.innerHTML = available
     .map((e) => {
       const extra = [e.Category, e.SerialNumber].filter(Boolean).join(" • ");
-      return `<option value="${e.EquipmentId}">${e.ItemName}${extra ? " (" + extra + ")" : ""}</option>`;
+      return `<option value="${e.EquipmentId}">${e.ItemName}${
+        extra ? " (" + extra + ")" : ""
+      }</option>`;
     })
     .join("");
 
@@ -613,7 +707,9 @@ async function loadAnnouncementsAndFaqs() {
                 <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                   <div>
                     <div style="font-weight:900">${x.Title}</div>
-                    <div style="color:var(--muted); font-size:13px">${new Date(x.CreatedAt).toLocaleString()} • ${x.Audience}</div>
+                    <div style="color:var(--muted); font-size:13px">${new Date(
+                      x.CreatedAt,
+                    ).toLocaleString()} • ${x.Audience}</div>
                   </div>
                   <span class="badge">New</span>
                 </div>
