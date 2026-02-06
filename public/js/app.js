@@ -19,7 +19,7 @@ async function api(path, options = {}) {
 
   const isFormData = options.body instanceof FormData;
 
-  // Only set JSON header if NOT FormData
+  // set JSON header if NOT FormData
   if (!isFormData && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
@@ -78,7 +78,7 @@ async function loginUser(e) {
 
     saveToken(data.token);
 
-    // Redirect based on role
+    // redirect based on role
     if (data.user.role === "HR") window.location.href = "/hr.html";
     else window.location.href = "/employee.html";
   } catch (err) {
@@ -106,7 +106,7 @@ async function loadDashboard(roleExpected) {
       return;
     }
 
-    // Ping correct route to prove role separation
+    // ping correct route to prove role separation
     const pingPath =
       roleExpected === "HR" ? "/api/hr/ping" : "/api/employee/ping";
     const ping = await api(pingPath);
@@ -370,6 +370,276 @@ async function createTraining(e) {
       msg.style.color = "green";
     }
     e.target.reset();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+// ---------------- EQUIPMENT (Employee) ----------------
+async function loadMyEquipment() {
+  const tbody = document.getElementById("equipTbody");
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  try {
+    const data = await api("/api/equipment/my");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+    for (const e of data.equipment) {
+      const tr = document.createElement("tr");
+      const assigned = new Date(e.AssignedAt).toLocaleString();
+      const ack = e.EmployeeAck ? "Yes" : "No";
+
+      tr.innerHTML = `
+        <td>${e.ItemName}</td>
+        <td>${e.SerialNumber || "-"}</td>
+        <td>${e.Category || "-"}</td>
+        <td>${assigned}</td>
+        <td>${ack}</td>
+        <td>
+          ${
+            e.ReturnedAt
+              ? "<span class='badge'>Returned</span>"
+              : e.EmployeeAck
+                ? "<span class='badge'>Acknowledged</span>"
+                : `<button class="btn btn-primary" data-id="${e.AssignmentId}">Acknowledge</button>`
+          }
+        </td>
+      `;
+
+      const btn = tr.querySelector("button");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          await api(`/api/equipment/my/${btn.dataset.id}/ack`, {
+            method: "PATCH",
+          });
+          loadMyEquipment();
+        });
+      }
+
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+// ---------------- EQUIPMENT (HR) ----------------
+async function loadHREquipmentPage() {
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  await Promise.all([
+    loadEmployeesForAssign(),
+    loadEquipmentForAssign(),
+    loadEquipmentAssignments(),
+  ]);
+}
+
+async function loadEmployeesForAssign() {
+  const sel = document.getElementById("empSelect");
+  const data = await api("/api/hr/employees");
+  if (!sel) return;
+
+  sel.innerHTML = data.employees
+    .map((u) => `<option value="${u.UserId}">${u.Name} (${u.Email})</option>`)
+    .join("");
+}
+
+async function loadEquipmentForAssign() {
+  const sel = document.getElementById("eqSelect");
+  const data = await api("/api/hr/equipment");
+  if (!sel) return;
+
+  const available = data.equipment.filter((x) => x.Status === "AVAILABLE");
+  sel.innerHTML = available
+    .map((e) => {
+      const extra = [e.Category, e.SerialNumber].filter(Boolean).join(" • ");
+      return `<option value="${e.EquipmentId}">${e.ItemName}${extra ? " (" + extra + ")" : ""}</option>`;
+    })
+    .join("");
+
+  if (!available.length)
+    sel.innerHTML = `<option value="">No AVAILABLE equipment</option>`;
+}
+
+async function loadEquipmentAssignments() {
+  const tbody = document.getElementById("assignTbody");
+  if (!tbody) return;
+
+  const data = await api("/api/hr/equipment/assignments");
+  tbody.innerHTML = "";
+
+  for (const a of data.assignments) {
+    const tr = document.createElement("tr");
+    const assigned = new Date(a.AssignedAt).toLocaleString();
+    const returned = a.ReturnedAt
+      ? new Date(a.ReturnedAt).toLocaleString()
+      : "-";
+
+    tr.innerHTML = `
+      <td>${a.Name}</td>
+      <td>${a.ItemName}</td>
+      <td>${a.SerialNumber || "-"}</td>
+      <td>${assigned}</td>
+      <td>${a.EmployeeAck ? "Yes" : "No"}</td>
+      <td>${returned}</td>
+      <td>
+        ${
+          a.ReturnedAt
+            ? "<span class='badge'>Done</span>"
+            : `<button class="btn" data-id="${a.AssignmentId}">Mark Returned</button>`
+        }
+      </td>
+    `;
+
+    const btn = tr.querySelector("button");
+    if (btn) {
+      btn.addEventListener("click", async () => {
+        await api(`/api/hr/equipment/assignments/${btn.dataset.id}/return`, {
+          method: "PATCH",
+        });
+        loadHREquipmentPage();
+      });
+    }
+
+    tbody.appendChild(tr);
+  }
+}
+
+async function createEquipment(e) {
+  e.preventDefault();
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  const itemName = document.getElementById("eqName")?.value.trim();
+  const serialNumber = document.getElementById("eqSerial")?.value.trim();
+  const category = document.getElementById("eqCat")?.value.trim();
+
+  try {
+    await api("/api/hr/equipment", {
+      method: "POST",
+      body: JSON.stringify({ itemName, serialNumber, category }),
+    });
+
+    document.getElementById("eqName").value = "";
+    document.getElementById("eqSerial").value = "";
+    document.getElementById("eqCat").value = "";
+
+    if (msg) {
+      msg.textContent = "Equipment added";
+      msg.style.color = "green";
+    }
+
+    loadHREquipmentPage();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+async function assignEquipment(e) {
+  e.preventDefault();
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  const userId = document.getElementById("empSelect")?.value;
+  const equipmentId = document.getElementById("eqSelect")?.value;
+  const dueBackAt = document.getElementById("dueBackAt")?.value;
+  const notes = document.getElementById("eqNotes")?.value.trim();
+
+  if (!equipmentId) {
+    if (msg) {
+      msg.textContent = "No available equipment to assign.";
+      msg.style.color = "crimson";
+    }
+    return;
+  }
+
+  try {
+    await api("/api/hr/equipment/assign", {
+      method: "POST",
+      body: JSON.stringify({
+        userId,
+        equipmentId,
+        dueBackAt: dueBackAt || null,
+        notes,
+      }),
+    });
+
+    document.getElementById("eqNotes").value = "";
+    if (msg) {
+      msg.textContent = "Assigned";
+      msg.style.color = "green";
+    }
+
+    loadHREquipmentPage();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+// ---------------- ANNOUNCEMENTS + FAQ ----------------
+async function loadAnnouncementsAndFaqs() {
+  const announce = document.getElementById("announceList");
+  const faq = document.getElementById("faqList");
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  try {
+    const [a, f] = await Promise.all([
+      api("/api/announcements"),
+      api("/api/faqs"),
+    ]);
+
+    if (announce) {
+      announce.innerHTML = a.announcements.length
+        ? a.announcements
+            .map(
+              (x) => `
+              <div class="feature">
+                <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                  <div>
+                    <div style="font-weight:900">${x.Title}</div>
+                    <div style="color:var(--muted); font-size:13px">${new Date(x.CreatedAt).toLocaleString()} • ${x.Audience}</div>
+                  </div>
+                  <span class="badge">New</span>
+                </div>
+                <div style="margin-top:8px; white-space:pre-wrap">${x.Body}</div>
+              </div>
+            `,
+            )
+            .join("")
+        : `<div class="feature">No announcements yet.</div>`;
+    }
+
+    if (faq) {
+      faq.innerHTML = f.faqs.length
+        ? f.faqs
+            .map(
+              (x) => `
+              <details class="feature">
+                <summary style="cursor:pointer; font-weight:900">${x.Question}</summary>
+                <div style="margin-top:8px; white-space:pre-wrap">${x.Answer}</div>
+                <div style="margin-top:8px; color:var(--muted); font-size:13px">${x.Category || "General"}</div>
+              </details>
+            `,
+            )
+            .join("")
+        : `<div class="feature">No FAQs yet.</div>`;
+    }
   } catch (err) {
     if (msg) {
       msg.textContent = err.message;

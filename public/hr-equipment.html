@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>HR Equipment</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+
+  <body class="has-bg bg-hr" onload="loadHREquipmentPage()">
+    <header class="container">
+      <nav class="nav">
+        <div class="brand">
+          <div class="brand-badge"></div>
+          <div>HR • Equipment</div>
+        </div>
+        <div class="nav-links">
+          <a class="btn btn-ghost" href="/hr.html">← Dashboard</a>
+          <button class="btn" onclick="logout()">Logout</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container">
+      <section class="hero" style="grid-template-columns: 1fr">
+        <div class="hero-card">
+          <div class="mock-top">
+            <div style="font-weight: 900">Add Equipment</div>
+            <span class="pill">HR</span>
+          </div>
+
+          <form
+            onsubmit="createEquipment(event)"
+            style="
+              display: flex;
+              gap: 10px;
+              flex-wrap: wrap;
+              margin-bottom: 12px;
+            "
+          >
+            <input
+              id="eqName"
+              placeholder="Item name (required)"
+              required
+              class="btn"
+              style="padding: 12px; min-width: 220px"
+            />
+            <input
+              id="eqSerial"
+              placeholder="Serial number"
+              class="btn"
+              style="padding: 12px; min-width: 180px"
+            />
+            <input
+              id="eqCat"
+              placeholder="Category (Laptop, Access...)"
+              class="btn"
+              style="padding: 12px; min-width: 200px"
+            />
+            <button class="btn btn-primary" type="submit">Add</button>
+          </form>
+
+          <hr
+            style="
+              border: none;
+              border-top: 1px solid var(--border);
+              margin: 12px 0;
+            "
+          />
+
+          <div class="mock-top">
+            <div style="font-weight: 900">Assign Equipment</div>
+            <span class="pill">HR</span>
+          </div>
+
+          <form
+            onsubmit="assignEquipment(event)"
+            style="
+              display: flex;
+              gap: 10px;
+              flex-wrap: wrap;
+              margin-bottom: 14px;
+            "
+          >
+            <select
+              id="empSelect"
+              class="btn"
+              style="padding: 12px; min-width: 220px"
+            ></select>
+            <select
+              id="eqSelect"
+              class="btn"
+              style="padding: 12px; min-width: 220px"
+            ></select>
+            <input
+              id="dueBackAt"
+              type="datetime-local"
+              class="btn"
+              style="padding: 12px; min-width: 220px"
+            />
+            <input
+              id="eqNotes"
+              placeholder="Notes (optional)"
+              class="btn"
+              style="padding: 12px; min-width: 220px"
+            />
+            <button class="btn btn-primary" type="submit">Assign</button>
+          </form>
+
+          <div style="overflow: auto">
+            <table style="width: 100%; border-collapse: collapse">
+              <thead>
+                <tr style="text-align: left">
+                  <th>Employee</th>
+                  <th>Item</th>
+                  <th>Serial</th>
+                  <th>Assigned</th>
+                  <th>Ack</th>
+                  <th>Returned</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="assignTbody"></tbody>
+            </table>
+          </div>
+
+          <p id="msg" style="margin-top: 12px"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer></footer>
+
+    <script src="/js/app.js"></script>
+  </body>
+</html>
