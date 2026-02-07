@@ -33,12 +33,12 @@ app.get("/api/ping", (req, res) => res.json({ ok: true }));
 (async () => {
   try {
     await getPool();
-    console.log("✅ Connected to MSSQL");
+    console.log("Connected to MSSQL");
     app.listen(PORT, () =>
-      console.log(`✅ Server running on http://localhost:${PORT}`),
+      console.log(`Server running on http://localhost:${PORT}`),
     );
   } catch (err) {
-    console.error("❌ DB connection failed:", err);
+    console.error("DB connection failed:", err);
     process.exit(1);
   }
 })();
