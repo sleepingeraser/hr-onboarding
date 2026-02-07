@@ -31,6 +31,15 @@ app.use(express.static(path.join(__dirname, "public")));
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
+// routes
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api", require("./routes/checklistRoutes"));
+app.use("/api", require("./routes/documentsRoutes"));
+app.use("/api", require("./routes/trainingsRoutes"));
+app.use("/api", require("./routes/equipmentRoutes"));
+app.use("/api", require("./routes/announcementsRoutes"));
+app.use("/api", require("./routes/faqsRoutes"));
+
 // ---------- health ----------
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
