@@ -1,15 +1,26 @@
 const express = require("express");
 const path = require("path");
 const cors = require("cors");
+require("dotenv").config();
+
+const { getPool, sql } = require("./config/dbConfig");
+const {
+  authRequired,
+  roleRequired,
+  normalizeEmail,
+} = require("./middleware/auth");
+const { upload } = require("./middleware/upload");
+
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const sql = require("mssql");
-const multer = require("multer");
-require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || "sky";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  console.warn("⚠️ JWT_SECRET is missing in .env");
+}
 
 app.use(cors());
 app.use(express.json());
@@ -20,85 +31,8 @@ app.use(express.static(path.join(__dirname, "public")));
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
-// ---------- SQL connection ----------
-const dbConfig = {
-  server: process.env.DB_SERVER,
-  database: process.env.DB_DATABASE,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  options: {
-    encrypt: String(process.env.DB_ENCRYPT || "false") === "true",
-    trustServerCertificate: true,
-  },
-};
-
-let pool;
-async function getPool() {
-  if (pool) return pool;
-  pool = await sql.connect(dbConfig);
-  return pool;
-}
-
-// ---------- auth middleware ----------
-function authRequired(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [type, token] = header.split(" ");
-  if (type !== "Bearer" || !token)
-    return res.status(401).json({ message: "Missing or invalid token" });
-
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ message: "Invalid token" });
-  }
-}
-
-function roleRequired(role) {
-  return (req, res, next) => {
-    if (!req.user?.role || req.user.role !== role)
-      return res.status(403).json({ message: "Forbidden" });
-    next();
-  };
-}
-
-function normalizeEmail(email) {
-  return String(email || "")
-    .trim()
-    .toLowerCase();
-}
-
-// ---------- file upload ----------
-const storage = multer.diskStorage({
-  destination: (req, file, cb) =>
-    cb(null, path.join(__dirname, "public", "uploads")),
-  filename: (req, file, cb) => {
-    const safe = Date.now() + "-" + file.originalname.replace(/[^\w.\-]/g, "_");
-    cb(null, safe);
-  },
-});
-const upload = multer({ storage });
-
-// HR list trainings
-app.get(
-  "/api/hr/trainings",
-  authRequired,
-  roleRequired("HR"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
-      const rows = await p.request().query(`
-        SELECT TOP 50 TrainingId, Title, StartsAt, Location, Notes
-        FROM Trainings
-        ORDER BY StartsAt DESC
-      `);
-      res.json({ trainings: rows.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
-    }
-  },
-);
+// ---------- health ----------
+app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
 // ---------- AUTH ----------
 app.post("/api/auth/register", async (req, res) => {
@@ -106,10 +40,12 @@ app.post("/api/auth/register", async (req, res) => {
     const { name, email, password, role } = req.body || {};
     const cleanEmail = normalizeEmail(email);
 
-    if (!name || !cleanEmail || !password || !role)
+    if (!name || !cleanEmail || !password || !role) {
       return res.status(400).json({ message: "Missing fields" });
-    if (!["HR", "EMPLOYEE"].includes(role))
+    }
+    if (!["HR", "EMPLOYEE"].includes(role)) {
       return res.status(400).json({ message: "Invalid role" });
+    }
 
     const p = await getPool();
 
@@ -118,8 +54,9 @@ app.post("/api/auth/register", async (req, res) => {
       .input("Email", sql.NVarChar, cleanEmail)
       .query("SELECT UserId FROM Users WHERE Email=@Email");
 
-    if (exists.recordset.length)
+    if (exists.recordset.length) {
       return res.status(409).json({ message: "Email already registered" });
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -144,8 +81,10 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const cleanEmail = normalizeEmail(email);
-    if (!cleanEmail || !password)
+
+    if (!cleanEmail || !password) {
       return res.status(400).json({ message: "Missing email/password" });
+    }
 
     const p = await getPool();
     const result = await p
@@ -192,11 +131,33 @@ app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
   res.json({ message: "Hello HR ✅" }),
 );
+
 app.get(
   "/api/employee/ping",
   authRequired,
   roleRequired("EMPLOYEE"),
   (req, res) => res.json({ message: "Hello Employee ✅" }),
+);
+
+// ---------- HR TRAININGS (LIST) ----------
+app.get(
+  "/api/hr/trainings",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+      SELECT TOP 50 TrainingId, Title, StartsAt, Location, Notes
+      FROM Trainings
+      ORDER BY StartsAt DESC
+    `);
+      res.json({ trainings: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
 );
 
 // ---------- CHECKLIST (Employee) ----------
@@ -209,15 +170,15 @@ app.get(
       const p = await getPool();
 
       await p.request().input("UserId", sql.Int, req.user.userId).query(`
-        INSERT INTO UserChecklist (UserId, ItemId)
-        SELECT @UserId, c.ItemId
-        FROM ChecklistItems c
-        WHERE c.IsActive=1
-          AND NOT EXISTS (
-            SELECT 1 FROM UserChecklist uc
-            WHERE uc.UserId=@UserId AND uc.ItemId=c.ItemId
-          )
-      `);
+      INSERT INTO UserChecklist (UserId, ItemId)
+      SELECT @UserId, c.ItemId
+      FROM ChecklistItems c
+      WHERE c.IsActive=1
+        AND NOT EXISTS (
+          SELECT 1 FROM UserChecklist uc
+          WHERE uc.UserId=@UserId AND uc.ItemId=c.ItemId
+        )
+    `);
 
       const items = await p.request().input("UserId", sql.Int, req.user.userId)
         .query(`
@@ -247,8 +208,10 @@ app.patch(
     try {
       const itemId = Number(req.params.itemId);
       const { status } = req.body || {};
-      if (!["PENDING", "DONE"].includes(status))
+      if (!itemId) return res.status(400).json({ message: "Invalid itemId" });
+      if (!["PENDING", "DONE"].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
+      }
 
       const p = await getPool();
       await p
@@ -256,10 +219,10 @@ app.patch(
         .input("UserId", sql.Int, req.user.userId)
         .input("ItemId", sql.Int, itemId)
         .input("Status", sql.NVarChar, status).query(`
-        UPDATE UserChecklist
-        SET Status=@Status, UpdatedAt=SYSDATETIME()
-        WHERE UserId=@UserId AND ItemId=@ItemId
-      `);
+          UPDATE UserChecklist
+          SET Status=@Status, UpdatedAt=SYSDATETIME()
+          WHERE UserId=@UserId AND ItemId=@ItemId
+        `);
 
       res.json({ message: "Updated" });
     } catch (e) {
@@ -289,9 +252,9 @@ app.post(
         .input("UserId", sql.Int, req.user.userId)
         .input("DocType", sql.NVarChar, docType)
         .input("FileUrl", sql.NVarChar, fileUrl).query(`
-        INSERT INTO Documents (UserId, DocType, FileUrl)
-        VALUES (@UserId, @DocType, @FileUrl)
-      `);
+          INSERT INTO Documents (UserId, DocType, FileUrl)
+          VALUES (@UserId, @DocType, @FileUrl)
+        `);
 
       res.json({ message: "Uploaded", fileUrl });
     } catch (e) {
@@ -333,13 +296,13 @@ app.get(
     try {
       const p = await getPool();
       const docs = await p.request().query(`
-      SELECT d.DocId, d.DocType, d.FileUrl, d.Status, d.HRComment, d.UploadedAt,
-             u.UserId, u.Name, u.Email
-      FROM Documents d
-      JOIN Users u ON u.UserId=d.UserId
-      WHERE d.Status='PENDING'
-      ORDER BY d.UploadedAt ASC
-    `);
+        SELECT d.DocId, d.DocType, d.FileUrl, d.Status, d.HRComment, d.UploadedAt,
+               u.UserId, u.Name, u.Email
+        FROM Documents d
+        JOIN Users u ON u.UserId=d.UserId
+        WHERE d.Status='PENDING'
+        ORDER BY d.UploadedAt ASC
+      `);
 
       res.json({ documents: docs.recordset });
     } catch (e) {
@@ -357,8 +320,11 @@ app.patch(
     try {
       const docId = Number(req.params.docId);
       const { status, comment } = req.body || {};
-      if (!["APPROVED", "REJECTED"].includes(status))
+
+      if (!docId) return res.status(400).json({ message: "Invalid docId" });
+      if (!["APPROVED", "REJECTED"].includes(status)) {
         return res.status(400).json({ message: "Invalid status" });
+      }
 
       const p = await getPool();
       await p
@@ -366,10 +332,10 @@ app.patch(
         .input("DocId", sql.Int, docId)
         .input("Status", sql.NVarChar, status)
         .input("Comment", sql.NVarChar, comment || null).query(`
-        UPDATE Documents
-        SET Status=@Status, HRComment=@Comment
-        WHERE DocId=@DocId
-      `);
+          UPDATE Documents
+          SET Status=@Status, HRComment=@Comment
+          WHERE DocId=@DocId
+        `);
 
       res.json({ message: "Updated" });
     } catch (e) {
@@ -379,7 +345,7 @@ app.patch(
   },
 );
 
-// ---------- TRAININGS ----------
+// ---------- TRAININGS (Employee list + attendance) ----------
 app.get(
   "/api/trainings",
   authRequired,
@@ -388,16 +354,15 @@ app.get(
     try {
       const p = await getPool();
 
-      // auto-assign all trainings to user
       await p.request().input("UserId", sql.Int, req.user.userId).query(`
-        INSERT INTO UserTraining (UserId, TrainingId)
-        SELECT @UserId, t.TrainingId
-        FROM Trainings t
-        WHERE NOT EXISTS (
-          SELECT 1 FROM UserTraining ut
-          WHERE ut.UserId=@UserId AND ut.TrainingId=t.TrainingId
-        )
-      `);
+      INSERT INTO UserTraining (UserId, TrainingId)
+      SELECT @UserId, t.TrainingId
+      FROM Trainings t
+      WHERE NOT EXISTS (
+        SELECT 1 FROM UserTraining ut
+        WHERE ut.UserId=@UserId AND ut.TrainingId=t.TrainingId
+      )
+    `);
 
       const rows = await p.request().input("UserId", sql.Int, req.user.userId)
         .query(`
@@ -424,8 +389,13 @@ app.patch(
     try {
       const trainingId = Number(req.params.trainingId);
       const { attendance } = req.body || {};
-      if (!["UPCOMING", "ATTENDED"].includes(attendance))
+      if (!trainingId)
+        return res.status(400).json({ message: "Invalid trainingId" });
+
+      // keep your original values
+      if (!["UPCOMING", "ATTENDED"].includes(attendance)) {
         return res.status(400).json({ message: "Invalid attendance" });
+      }
 
       const p = await getPool();
       await p
@@ -433,10 +403,10 @@ app.patch(
         .input("UserId", sql.Int, req.user.userId)
         .input("TrainingId", sql.Int, trainingId)
         .input("Attendance", sql.NVarChar, attendance).query(`
-        UPDATE UserTraining
-        SET Attendance=@Attendance
-        WHERE UserId=@UserId AND TrainingId=@TrainingId
-      `);
+          UPDATE UserTraining
+          SET Attendance=@Attendance
+          WHERE UserId=@UserId AND TrainingId=@TrainingId
+        `);
 
       res.json({ message: "Updated" });
     } catch (e) {
@@ -454,8 +424,9 @@ app.post(
   async (req, res) => {
     try {
       const { title, startsAt, location, notes } = req.body || {};
-      if (!title || !startsAt)
+      if (!title || !startsAt) {
         return res.status(400).json({ message: "Missing title/startsAt" });
+      }
 
       const p = await getPool();
       await p
@@ -476,7 +447,7 @@ app.post(
   },
 );
 
-// ---------- EQUIPMENT ----------
+// ---------- EQUIPMENT (same routes as yours) ----------
 
 // HR: create equipment
 app.post(
@@ -536,47 +507,41 @@ app.get(
   async (req, res) => {
     try {
       const p = await getPool();
-
       const rows = await p.request().query(`
-        SELECT
-          u.UserId,
-          u.Name,
-          u.Email,
-          u.CreatedAt,
+      SELECT
+        u.UserId,
+        u.Name,
+        u.Email,
+        u.CreatedAt,
 
-          -- checklist progress
-          (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId) AS ChecklistTotal,
-          (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId AND uc.Status='DONE') AS ChecklistDone,
+        (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId) AS ChecklistTotal,
+        (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId AND uc.Status='DONE') AS ChecklistDone,
 
-          -- documents pending
-          (SELECT COUNT(*) FROM Documents d WHERE d.UserId = u.UserId AND d.Status='PENDING') AS PendingDocs,
+        (SELECT COUNT(*) FROM Documents d WHERE d.UserId = u.UserId AND d.Status='PENDING') AS PendingDocs,
 
-          -- currently borrowed (not yet returned)
-          (SELECT COUNT(*) FROM UserEquipment ue WHERE ue.UserId = u.UserId AND ue.ReturnedAt IS NULL) AS BorrowingNow,
+        (SELECT COUNT(*) FROM UserEquipment ue WHERE ue.UserId = u.UserId AND ue.ReturnedAt IS NULL) AS BorrowingNow,
 
-          -- latest equipment assignment + returned date (if any)
-          lastEq.ItemName AS LastItemName,
-          lastEq.SerialNumber AS LastSerialNumber,
-          lastEq.AssignedAt AS LastAssignedAt,
-          lastEq.ReturnedAt AS LastReturnedAt,
-          lastEq.EmployeeAck AS LastEmployeeAck
-
-        FROM Users u
-        OUTER APPLY (
-          SELECT TOP 1
-            e.ItemName,
-            e.SerialNumber,
-            ue.AssignedAt,
-            ue.ReturnedAt,
-            ue.EmployeeAck
-          FROM UserEquipment ue
-          JOIN Equipment e ON e.EquipmentId = ue.EquipmentId
-          WHERE ue.UserId = u.UserId
-          ORDER BY ue.AssignedAt DESC
-        ) lastEq
-        WHERE u.Role='EMPLOYEE'
-        ORDER BY u.Name ASC
-      `);
+        lastEq.ItemName AS LastItemName,
+        lastEq.SerialNumber AS LastSerialNumber,
+        lastEq.AssignedAt AS LastAssignedAt,
+        lastEq.ReturnedAt AS LastReturnedAt,
+        lastEq.EmployeeAck AS LastEmployeeAck
+      FROM Users u
+      OUTER APPLY (
+        SELECT TOP 1
+          e.ItemName,
+          e.SerialNumber,
+          ue.AssignedAt,
+          ue.ReturnedAt,
+          ue.EmployeeAck
+        FROM UserEquipment ue
+        JOIN Equipment e ON e.EquipmentId = ue.EquipmentId
+        WHERE ue.UserId = u.UserId
+        ORDER BY ue.AssignedAt DESC
+      ) lastEq
+      WHERE u.Role='EMPLOYEE'
+      ORDER BY u.Name ASC
+    `);
 
       res.json({ employees: rows.recordset });
     } catch (e) {
@@ -586,7 +551,7 @@ app.get(
   },
 );
 
-// HR: assign equipment to employee
+// HR: assign equipment
 app.post(
   "/api/hr/equipment/assign",
   authRequired,
@@ -596,8 +561,10 @@ app.post(
       const { userId, equipmentId, dueBackAt, notes } = req.body || {};
       const uid = Number(userId);
       const eid = Number(equipmentId);
-      if (!uid || !eid)
+
+      if (!uid || !eid) {
         return res.status(400).json({ message: "Missing userId/equipmentId" });
+      }
 
       const p = await getPool();
 
@@ -605,12 +572,13 @@ app.post(
         .request()
         .input("EquipmentId", sql.Int, eid)
         .query(`SELECT Status FROM Equipment WHERE EquipmentId=@EquipmentId`);
+
       if (!eq.recordset.length)
         return res.status(404).json({ message: "Equipment not found" });
-      if (eq.recordset[0].Status !== "AVAILABLE")
+      if (eq.recordset[0].Status !== "AVAILABLE") {
         return res.status(409).json({ message: "Equipment not available" });
+      }
 
-      // create assignment + mark assigned
       await p
         .request()
         .input("UserId", sql.Int, uid)
@@ -672,13 +640,13 @@ app.patch(
         return res.status(400).json({ message: "Invalid assignmentId" });
 
       const p = await getPool();
-
       const row = await p
         .request()
         .input("AssignmentId", sql.Int, assignmentId)
         .query(
           `SELECT EquipmentId, ReturnedAt FROM UserEquipment WHERE AssignmentId=@AssignmentId`,
         );
+
       if (!row.recordset.length)
         return res.status(404).json({ message: "Not found" });
       if (row.recordset[0].ReturnedAt)
@@ -690,9 +658,9 @@ app.patch(
         .request()
         .input("AssignmentId", sql.Int, assignmentId)
         .input("EquipmentId", sql.Int, equipmentId).query(`
-        UPDATE UserEquipment SET ReturnedAt=SYSDATETIME() WHERE AssignmentId=@AssignmentId;
-        UPDATE Equipment SET Status='AVAILABLE' WHERE EquipmentId=@EquipmentId;
-      `);
+          UPDATE UserEquipment SET ReturnedAt=SYSDATETIME() WHERE AssignmentId=@AssignmentId;
+          UPDATE Equipment SET Status='AVAILABLE' WHERE EquipmentId=@EquipmentId;
+        `);
 
       res.json({ message: "Returned" });
     } catch (e) {
@@ -702,7 +670,7 @@ app.patch(
   },
 );
 
-// employee: view my assigned equipment
+// employee: my equipment
 app.get(
   "/api/equipment/my",
   authRequired,
@@ -736,15 +704,18 @@ app.patch(
   async (req, res) => {
     try {
       const assignmentId = Number(req.params.assignmentId);
+      if (!assignmentId)
+        return res.status(400).json({ message: "Invalid assignmentId" });
+
       const p = await getPool();
       await p
         .request()
         .input("AssignmentId", sql.Int, assignmentId)
         .input("UserId", sql.Int, req.user.userId).query(`
-        UPDATE UserEquipment
-        SET EmployeeAck=1
-        WHERE AssignmentId=@AssignmentId AND UserId=@UserId
-      `);
+          UPDATE UserEquipment
+          SET EmployeeAck=1
+          WHERE AssignmentId=@AssignmentId AND UserId=@UserId
+        `);
 
       res.json({ message: "Acknowledged" });
     } catch (e) {
@@ -784,8 +755,9 @@ app.post(
       const { title, body, audience = "ALL" } = req.body || {};
       if (!title || !body)
         return res.status(400).json({ message: "Missing title/body" });
-      if (!["ALL", "EMPLOYEE", "HR"].includes(audience))
+      if (!["ALL", "EMPLOYEE", "HR"].includes(audience)) {
         return res.status(400).json({ message: "Invalid audience" });
+      }
 
       const p = await getPool();
       await p
@@ -814,12 +786,34 @@ app.delete(
   async (req, res) => {
     try {
       const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
       const p = await getPool();
-      await p
-        .request()
-        .input("Id", sql.Int, id)
-        .query(`DELETE FROM Announcements WHERE AnnouncementId=@Id`);
+      await p.request().input("Id", sql.Int, id).query(`
+      DELETE FROM Announcements WHERE AnnouncementId=@Id
+    `);
       res.json({ message: "Deleted" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: list all announcements
+app.get(
+  "/api/hr/announcements/all",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+      SELECT AnnouncementId, Title, Body, Audience, CreatedAt
+      FROM Announcements
+      ORDER BY CreatedAt DESC
+    `);
+      res.json({ announcements: rows.recordset });
     } catch (e) {
       console.error(e);
       res.status(500).json({ message: "Server error" });
@@ -876,11 +870,13 @@ app.patch(
   async (req, res) => {
     try {
       const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid id" });
+
       const p = await getPool();
-      await p
-        .request()
-        .input("Id", sql.Int, id)
-        .query(`UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id`);
+      await p.request().input("Id", sql.Int, id).query(`
+      UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id
+    `);
+
       res.json({ message: "Deactivated" });
     } catch (e) {
       console.error(e);
@@ -889,28 +885,7 @@ app.patch(
   },
 );
 
-// HR: list ALL announcements
-app.get(
-  "/api/hr/announcements/all",
-  authRequired,
-  roleRequired("HR"),
-  async (req, res) => {
-    try {
-      const p = await getPool();
-      const rows = await p.request().query(`
-        SELECT AnnouncementId, Title, Body, Audience, CreatedAt
-        FROM Announcements
-        ORDER BY CreatedAt DESC
-      `);
-      res.json({ announcements: rows.recordset });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ message: "Server error" });
-    }
-  },
-);
-
-// HR: list ALL FAQs
+// HR: list all FAQs
 app.get(
   "/api/hr/faqs/all",
   authRequired,
@@ -919,10 +894,10 @@ app.get(
     try {
       const p = await getPool();
       const rows = await p.request().query(`
-        SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
-        FROM FAQs
-        ORDER BY CreatedAt DESC
-      `);
+      SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
+      FROM FAQs
+      ORDER BY CreatedAt DESC
+    `);
       res.json({ faqs: rows.recordset });
     } catch (e) {
       console.error(e);
@@ -931,6 +906,16 @@ app.get(
   },
 );
 
-app.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`),
-);
+// ---------- start server after DB connects ----------
+(async () => {
+  try {
+    await getPool();
+    console.log("Connected to MSSQL");
+    app.listen(PORT, () =>
+      console.log(`Server running on http://localhost:${PORT}`),
+    );
+  } catch (err) {
+    console.error("DB connection failed:", err);
+    process.exit(1);
+  }
+})();
