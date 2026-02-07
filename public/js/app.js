@@ -124,13 +124,11 @@ async function loadDashboard(roleExpected) {
       status.style.color = "green";
     }
 
-    if (roleExpected === "EMPLOYEE") {
-      await loadEmployeeHomeSections();
-    }
-
-    // if HR dashboard has extra sections (pending docs preview + training preview), load them
+    // NEW: load dashboard widgets
     if (roleExpected === "HR") {
-      await loadHRHomeSections();
+      await loadHRDashboardWidgets();
+    } else {
+      await loadEmployeeDashboardWidgets();
     }
   } catch (err) {
     if (status) {
@@ -145,6 +143,263 @@ async function loadDashboard(roleExpected) {
 function logout() {
   clearToken();
   window.location.href = "/index.html";
+}
+
+// ---------------- DASHBOARD WIDGETS ----------------
+function fmtDate(dt) {
+  if (!dt) return "-";
+  try {
+    return new Date(dt).toLocaleString();
+  } catch {
+    return "-";
+  }
+}
+
+async function loadHRDashboardWidgets() {
+  const tbody = document.getElementById("hrEmpTbody");
+  const stats = document.getElementById("hrStats");
+  const msg = document.getElementById("hrEmpMsg");
+
+  if (!tbody && !stats) return;
+
+  try {
+    const data = await api("/api/hr/employees");
+    const employees = data.employees || [];
+
+    // top stats
+    if (stats) {
+      const total = employees.length;
+      const withPendingDocs = employees.filter(
+        (e) => (e.PendingDocs || 0) > 0,
+      ).length;
+      const borrowingNow = employees.reduce(
+        (sum, e) => sum + (e.BorrowingNow || 0),
+        0,
+      );
+
+      stats.innerHTML = `
+        <div class="feature">
+          <h3>Total Employees</h3>
+          <p style="font-weight:900; font-size:20px">${total}</p>
+        </div>
+        <div class="feature">
+          <h3>Employees w/ Pending Docs</h3>
+          <p style="font-weight:900; font-size:20px">${withPendingDocs}</p>
+        </div>
+        <div class="feature">
+          <h3>Items Currently Borrowed</h3>
+          <p style="font-weight:900; font-size:20px">${borrowingNow}</p>
+        </div>
+      `;
+    }
+
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    // helper: format joined as 2 lines
+    function fmtJoined(dt) {
+      if (!dt) return { date: "-", time: "" };
+      const d = new Date(dt);
+      if (Number.isNaN(d.getTime())) return { date: "-", time: "" };
+      return {
+        date: d.toLocaleDateString(),
+        time: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+    }
+
+    // helper: create "pill" without changing CSS
+    function pill(text) {
+      return `<span class="pill" style="padding:6px 10px; border-radius:999px; display:inline-block;">${text}</span>`;
+    }
+
+    for (const e of employees) {
+      const total = Number(e.ChecklistTotal || 0);
+      const done = Number(e.ChecklistDone || 0);
+      const pct = total ? Math.round((done / total) * 100) : 0;
+
+      const lastItem = e.LastItemName
+        ? `${e.LastItemName}${e.LastSerialNumber ? ` • ${e.LastSerialNumber}` : ""}`
+        : "-";
+
+      const ackText = e.LastAssignedAt
+        ? e.LastEmployeeAck
+          ? "Yes"
+          : "No"
+        : "-";
+
+      const joined = fmtJoined(e.CreatedAt);
+
+      const tr = document.createElement("tr");
+
+      tr.innerHTML = `
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          <div style="font-weight:900; line-height:1.2;">${e.Name}</div>
+          <div style="color:var(--muted); font-size:13px; word-break:break-word;">${e.Email}</div>
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          <div>${joined.date}</div>
+          <div style="color:var(--muted); font-size:13px;">${joined.time}</div>
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          <div style="font-weight:900;">${done}/${total}</div>
+          <div style="color:var(--muted); font-size:13px;">${pct}%</div>
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          ${pill(String(e.PendingDocs || 0))}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          ${pill(String(e.BorrowingNow || 0))}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top; word-break:break-word;">
+          ${lastItem}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          ${fmtDate(e.LastAssignedAt)}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          ${fmtDate(e.LastReturnedAt)}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          ${pill(ackText)}
+        </td>
+
+        <td style="padding:14px 16px; border-top:1px solid var(--border); vertical-align:top;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; white-space:nowrap;">
+            <a class="btn btn-primary" href="/hr-equipment.html">Equipment</a>
+            <a class="btn" href="/hr-documents.html">Docs</a>
+          </div>
+        </td>
+      `;
+
+      tbody.appendChild(tr);
+    }
+
+    if (msg) {
+      msg.textContent = `Showing ${employees.length} employees.`;
+      msg.style.color = "";
+    }
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    } else {
+      console.error(err);
+    }
+  }
+}
+
+async function loadEmployeeDashboardWidgets() {
+  const stats = document.getElementById("empStats");
+  const upcomingBox = document.getElementById("empUpcoming");
+  const announceBox = document.getElementById("empAnnouncements");
+
+  // checklist progress
+  let checklist = { items: [] };
+  try {
+    checklist = await api("/api/checklist");
+  } catch {}
+
+  const items = checklist.items || [];
+  const total = items.length;
+  const done = items.filter((x) => x.Status === "DONE").length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  // docs
+  let docs = { documents: [] };
+  try {
+    docs = await api("/api/documents/my");
+  } catch {}
+  const pendingDocs = (docs.documents || []).filter(
+    (d) => d.Status === "PENDING",
+  ).length;
+
+  // equipment
+  let equip = { equipment: [] };
+  try {
+    equip = await api("/api/equipment/my");
+  } catch {}
+  const unacked = (equip.equipment || []).filter(
+    (e) => !e.EmployeeAck && !e.ReturnedAt,
+  ).length;
+
+  if (stats) {
+    stats.innerHTML = `
+      <div class="feature">
+        <h3>Checklist Progress</h3>
+        <p style="font-weight:900; font-size:20px">${pct}%</p>
+        <p>${done}/${total} tasks done</p>
+      </div>
+      <div class="feature">
+        <h3>Documents Pending</h3>
+        <p style="font-weight:900; font-size:20px">${pendingDocs}</p>
+        <p>Waiting for HR review</p>
+      </div>
+      <div class="feature">
+        <h3>Equipment to Acknowledge</h3>
+        <p style="font-weight:900; font-size:20px">${unacked}</p>
+        <p>Tap “My Equipment” to confirm</p>
+      </div>
+    `;
+  }
+
+  // trainings
+  if (upcomingBox) {
+    let trainings = { trainings: [] };
+    try {
+      trainings = await api("/api/trainings");
+    } catch {}
+
+    const upcoming = (trainings.trainings || [])
+      .filter((t) => t.Attendance === "UPCOMING")
+      .slice(0, 3);
+
+    upcomingBox.innerHTML = upcoming.length
+      ? upcoming
+          .map(
+            (t) => `
+            <div class="mock-item">
+              <div>
+                <div style="font-weight:900">${t.Title}</div>
+                <div style="color:var(--muted); font-size:13px">${fmtDate(t.StartsAt)} • ${t.Location || "-"}</div>
+              </div>
+              <span class="badge">UPCOMING</span>
+            </div>
+          `,
+          )
+          .join("")
+      : `<div class="feature">No upcoming trainings.</div>`;
+  }
+
+  // announcements
+  if (announceBox) {
+    let anns = { announcements: [] };
+    try {
+      anns = await api("/api/announcements");
+    } catch {}
+
+    const top = (anns.announcements || []).slice(0, 2);
+    announceBox.innerHTML = top.length
+      ? top
+          .map(
+            (a) => `
+            <div class="feature">
+              <div style="font-weight:900">${a.Title}</div>
+              <div style="color:var(--muted); font-size:13px">${fmtDate(a.CreatedAt)}</div>
+              <div style="margin-top:8px; white-space:pre-wrap">${a.Body}</div>
+            </div>
+          `,
+          )
+          .join("")
+      : `<div class="feature">No announcements yet.</div>`;
+  }
 }
 
 // ---------------- HR HOME SECTIONS (NEW) ----------------

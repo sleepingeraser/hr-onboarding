@@ -28,11 +28,14 @@
           <p style="color: var(--muted)">
             Review documents, track onboarding progress, and assign equipment.
           </p>
+
           <div class="hero-actions">
             <a class="btn btn-primary" href="/hr-documents.html"
               >Review Documents</a
             >
             <a class="btn" href="/hr-training.html">Create Training</a>
+            <a class="btn" href="/hr-equipment.html">Equipment Assignment</a>
+            <a class="btn" href="/announcements.html">Announcements & FAQ</a>
           </div>
 
           <p id="status" style="margin-top: 16px"></p>
@@ -44,179 +47,172 @@
             <span class="pill">HR</span>
           </div>
           <div class="mock-grid">
-            <div class="mock-item">
-              <div>
-                <div style="font-weight: 800">John Tan</div>
-                <div style="color: #475569; font-size: 13px">Bank details</div>
-              </div>
-              <span class="badge">Pending</span>
-            </div>
-            <div class="mock-item">
-              <div>
-                <div style="font-weight: 800">Aisha Lim</div>
-                <div style="color: #475569; font-size: 13px">
-                  Signed contract
-                </div>
-              </div>
-              <span class="badge">Pending</span>
+            <div class="feature">
+              Tip: Use <b>Employee Overview</b> below to see checklist progress,
+              pending docs, and borrowed/returned equipment dates.
             </div>
           </div>
         </div>
       </section>
 
-      <!-- NEW: Dashboard sections below hero -->
+      <!-- HR stats -->
       <section class="section">
-        <h2 style="margin: 0 0 12px">Quick Actions</h2>
-
-        <div class="features" style="grid-template-columns: repeat(3, 1fr)">
-          <div class="feature">
-            <h3>Review Documents</h3>
-            <p>Preview pending documents and approve/reject faster.</p>
-            <a class="btn btn-primary" href="/hr-documents.html">Open Review</a>
-          </div>
-
-          <div class="feature">
-            <h3>Create Training</h3>
-            <p>Create onboarding training sessions for new hires.</p>
-            <a class="btn btn-primary" href="/hr-training.html"
-              >Open Training</a
-            >
-          </div>
-
-          <div class="feature">
-            <h3>Equipment & Updates</h3>
-            <p>Assign equipment and post announcements.</p>
-            <a class="btn btn-primary" href="/hr-equipment.html">
-              Equipment Assignment
-            </a>
-            <a class="btn" href="/announcements.html"> Announcements & FAQ </a>
-          </div>
-        </div>
+        <h2 style="margin-bottom: 10px">Overview</h2>
+        <div id="hrStats" class="features"></div>
       </section>
 
+      <!-- employee overview table -->
       <section class="section">
-        <h2 style="margin: 0 0 12px">Pending Document Preview</h2>
-
         <div class="hero-card">
           <div class="mock-top">
-            <div style="font-weight: 900">Documents Waiting for Review</div>
-            <span class="pill">HR</span>
+            <div style="font-weight: 900">Employee Overview</div>
+            <span class="pill">All Employees</span>
           </div>
 
-          <div style="overflow: auto">
-            <table style="width: 100%; border-collapse: collapse">
-              <thead>
-                <tr style="text-align: left">
-                  <th>Employee</th>
-                  <th>Type</th>
-                  <th>Uploaded</th>
-                </tr>
-              </thead>
-              <tbody id="hrPendingPreviewTbody"></tbody>
-            </table>
-          </div>
-
-          <p id="hrPendingPreviewMsg" style="margin-top: 12px"></p>
-          <div style="margin-top: 10px; display: flex; gap: 10px">
-            <a class="btn btn-primary" href="/hr-documents.html"
-              >Go to Full Review</a
-            >
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2 style="margin: 0 0 12px">Create Training (Quick)</h2>
-
-        <div class="hero-card">
-          <div class="mock-top">
-            <div style="font-weight: 900">New Training Session</div>
-            <span class="pill">HR</span>
-          </div>
-
-          <!-- reuse same IDs as hr-training.html so createTraining(event) works -->
-          <form
-            onsubmit="createTraining(event)"
-            style="display: grid; gap: 10px"
-          >
-            <input
-              id="tTitle"
-              placeholder="Title"
-              required
-              style="
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-              "
-            />
-
-            <input
-              id="tStartsAt"
-              type="datetime-local"
-              required
-              style="
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-              "
-            />
-
-            <input
-              id="tLocation"
-              placeholder="Location (optional)"
-              style="
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-              "
-            />
-
-            <textarea
-              id="tNotes"
-              placeholder="Notes (optional)"
-              style="
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-              "
-            ></textarea>
-
-            <button class="btn btn-primary" type="submit">Create</button>
-            <p id="msg"></p>
-          </form>
-
-          <hr
+          <div
             style="
-              border: none;
-              border-top: 1px solid var(--border);
-              margin: 12px 0;
+              overflow: auto;
+              border: 1px solid var(--border);
+              border-radius: 16px;
+              background: rgba(255, 255, 255, 0.7);
             "
-          />
+          >
+            <table
+              style="
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 0;
+                min-width: 1280px; /* gives space instead of squeezing */
+                table-layout: fixed; /* respects widths below */
+              "
+            >
+              <colgroup>
+                <col style="width: 220px" />
+                <!-- Employee -->
+                <col style="width: 140px" />
+                <!-- Joined -->
+                <col style="width: 120px" />
+                <!-- Checklist -->
+                <col style="width: 110px" />
+                <!-- Pending Docs -->
+                <col style="width: 110px" />
+                <!-- Borrowing -->
+                <col style="width: 190px" />
+                <!-- Latest Equipment -->
+                <col style="width: 150px" />
+                <!-- Assigned -->
+                <col style="width: 150px" />
+                <!-- Returned -->
+                <col style="width: 80px" />
+                <!-- Ack -->
+                <col style="width: 150px" />
+                <!-- Actions -->
+              </colgroup>
 
-          <div class="mock-top">
-            <div style="font-weight: 900">Latest Trainings</div>
-            <span class="pill">Preview</span>
-          </div>
-
-          <div style="overflow: auto">
-            <table style="width: 100%; border-collapse: collapse">
-              <thead>
+              <thead
+                style="
+                  position: sticky;
+                  top: 0;
+                  background: rgba(255, 255, 255, 0.95);
+                "
+              >
                 <tr style="text-align: left">
-                  <th>Title</th>
-                  <th>Date/Time</th>
-                  <th>Location</th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Employee
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Joined
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Checklist
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Pending Docs
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Borrowing
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Latest Equipment
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Assigned
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Returned
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Ack
+                  </th>
+                  <th
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                    "
+                  >
+                    Quick Links
+                  </th>
                 </tr>
               </thead>
-              <tbody id="hrTrainPreviewTbody"></tbody>
+
+              <tbody id="hrEmpTbody"></tbody>
             </table>
           </div>
 
-          <p id="hrTrainPreviewMsg" style="margin-top: 12px"></p>
+          <p style="margin-top: 12px; color: var(--muted)">
+            Note: For full equipment history per employee, open “Equipment
+            Assignment”.
+          </p>
         </div>
       </section>
     </main>
 
-    <footer></footer>
+    <footer class="footer"></footer>
 
     <script src="/js/app.js"></script>
   </body>
