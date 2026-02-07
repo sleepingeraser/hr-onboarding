@@ -92,12 +92,14 @@ a {
   align-items: center;
   padding: 18px 0;
 }
+
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
   font-weight: 800;
 }
+
 .brand-badge {
   width: 34px;
   height: 34px;
@@ -110,6 +112,7 @@ a {
   gap: 18px;
   align-items: center;
 }
+
 .btn {
   border: 1px solid var(--border);
   background: white;
@@ -118,13 +121,31 @@ a {
   font-weight: 700;
   cursor: pointer;
 }
+
 .btn-primary {
   border: none;
   color: white;
   background: linear-gradient(135deg, var(--primary), var(--primary2));
 }
+
 .btn-ghost {
   background: transparent;
+}
+
+a.btn,
+button.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+
+.feature a.btn,
+.feature button.btn {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .hero {
@@ -134,16 +155,19 @@ a {
   align-items: center;
   padding: 36px 0 18px;
 }
+
 .hero h1 {
   font-size: 44px;
   margin: 0 0 10px;
   line-height: 1.05;
 }
+
 .hero p {
   margin: 0 0 18px;
   color: var(--muted);
   max-width: 52ch;
 }
+
 .hero-actions {
   display: flex;
   gap: 12px;
@@ -157,6 +181,7 @@ a {
   padding: 18px;
   box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
 }
+
 .mock-top {
   display: flex;
   justify-content: space-between;
@@ -166,6 +191,7 @@ a {
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
+
 .pill {
   padding: 6px 10px;
   border-radius: 999px;
@@ -174,10 +200,12 @@ a {
   font-size: 12px;
   font-weight: 800;
 }
+
 .mock-grid {
   display: grid;
   gap: 10px;
 }
+
 .mock-item {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -186,6 +214,7 @@ a {
   justify-content: space-between;
   align-items: center;
 }
+
 .badge {
   font-size: 12px;
   font-weight: 800;
@@ -198,21 +227,29 @@ a {
 .section {
   padding: 22px 0 50px;
 }
+
 .features {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(3, 1fr);
 }
+
+.features.quick-actions {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
 .feature {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 16px;
 }
+
 .feature h3 {
   margin: 0 0 6px;
   font-size: 16px;
 }
+
 .feature p {
   margin: 0;
   color: var(--muted);
@@ -230,12 +267,19 @@ a {
   .hero {
     grid-template-columns: 1fr;
   }
+
   .hero h1 {
     font-size: 36px;
   }
+
   .features {
     grid-template-columns: 1fr;
   }
+
+  .features.quick-actions {
+    grid-template-columns: 1fr;
+  }
+
   .nav-links {
     gap: 10px;
   }

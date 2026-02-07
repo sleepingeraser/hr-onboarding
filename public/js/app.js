@@ -124,6 +124,10 @@ async function loadDashboard(roleExpected) {
       status.style.color = "green";
     }
 
+    if (roleExpected === "EMPLOYEE") {
+      await loadEmployeeHomeSections();
+    }
+
     // if HR dashboard has extra sections (pending docs preview + training preview), load them
     if (roleExpected === "HR") {
       await loadHRHomeSections();
@@ -215,6 +219,211 @@ async function loadHRHomeSections() {
         trainMsg.textContent = err.message;
         trainMsg.style.color = "crimson";
       }
+    }
+  }
+}
+
+async function loadEmployeeHomeSections() {
+  const summaryGrid = document.getElementById("empSummaryGrid");
+  const summaryMsg = document.getElementById("empSummaryMsg");
+
+  const checklistPreview = document.getElementById("empChecklistPreview");
+  const checklistMsg = document.getElementById("empChecklistMsg");
+
+  const docsPreview = document.getElementById("empDocsPreview");
+  const docsMsg = document.getElementById("empDocsMsg");
+
+  const trainTbody = document.getElementById("empTrainPreviewTbody");
+  const trainMsg = document.getElementById("empTrainMsg");
+
+  const equipTbody = document.getElementById("empEquipPreviewTbody");
+  const equipMsg = document.getElementById("empEquipMsg");
+
+  // If none exist (not on employee.html), do nothing
+  if (
+    !summaryGrid &&
+    !checklistPreview &&
+    !docsPreview &&
+    !trainTbody &&
+    !equipTbody
+  )
+    return;
+
+  try {
+    // load data in parallel
+    const [check, docs, trains, equip] = await Promise.all([
+      api("/api/checklist"),
+      api("/api/documents/my"),
+      api("/api/trainings"),
+      api("/api/equipment/my"),
+    ]);
+
+    const items = check.items || [];
+    const documents = docs.documents || [];
+    const trainings = trains.trainings || [];
+    const myEquip = equip.equipment || [];
+
+    // -------- SUMMARY --------
+    const doneCount = items.filter((x) => x.Status === "DONE").length;
+    const pendingCount = items.length - doneCount;
+
+    const docPending = documents.filter((d) => d.Status === "PENDING").length;
+    const docApproved = documents.filter((d) => d.Status === "APPROVED").length;
+    const docRejected = documents.filter((d) => d.Status === "REJECTED").length;
+
+    const upcomingTrain = trainings.filter((t) => t.Attendance !== "ATTENDED");
+    const borrowedNow = myEquip.filter((e) => !e.ReturnedAt).length;
+
+    if (summaryGrid) {
+      summaryGrid.innerHTML = `
+        <div class="mock-item">
+          <div>
+            <div style="font-weight: 800">Checklist</div>
+            <div style="color:#475569;font-size:13px">${doneCount} done / ${items.length} total</div>
+          </div>
+          <span class="badge">${pendingCount} pending</span>
+        </div>
+
+        <div class="mock-item">
+          <div>
+            <div style="font-weight: 800">Documents</div>
+            <div style="color:#475569;font-size:13px">Pending / Approved / Rejected</div>
+          </div>
+          <span class="badge">${docPending} / ${docApproved} / ${docRejected}</span>
+        </div>
+
+        <div class="mock-item">
+          <div>
+            <div style="font-weight: 800">Training</div>
+            <div style="color:#475569;font-size:13px">Upcoming sessions</div>
+          </div>
+          <span class="badge">${upcomingTrain.length}</span>
+        </div>
+
+        <div class="mock-item">
+          <div>
+            <div style="font-weight: 800">Equipment</div>
+            <div style="color:#475569;font-size:13px">Borrowed now</div>
+          </div>
+          <span class="badge">${borrowedNow}</span>
+        </div>
+      `;
+    }
+    if (summaryMsg) summaryMsg.textContent = "";
+
+    // -------- CHECKLIST PREVIEW (top 4 pending) --------
+    if (checklistPreview) {
+      const pending = items.filter((x) => x.Status !== "DONE").slice(0, 4);
+      checklistPreview.innerHTML = "";
+
+      for (const it of pending) {
+        const div = document.createElement("div");
+        div.className = "mock-item";
+        div.innerHTML = `
+          <div>
+            <div style="font-weight:800">${it.Title}</div>
+            <div style="color:#475569;font-size:13px">${it.Stage || ""}</div>
+          </div>
+          <span class="badge">${it.Status}</span>
+        `;
+        checklistPreview.appendChild(div);
+      }
+
+      if (!pending.length) {
+        checklistPreview.innerHTML = `<div class="mock-item"><div><div style="font-weight:800">All checklist items done 🎉</div></div><span class="badge">DONE</span></div>`;
+      }
+      if (checklistMsg) checklistMsg.textContent = "";
+    }
+
+    // -------- DOCS PREVIEW (counts + last 2 docs) --------
+    if (docsPreview) {
+      docsPreview.innerHTML = `
+        <div class="mock-item">
+          <div>
+            <div style="font-weight:800">Pending</div>
+            <div style="color:#475569;font-size:13px">Waiting HR review</div>
+          </div>
+          <span class="badge">${docPending}</span>
+        </div>
+        <div class="mock-item">
+          <div>
+            <div style="font-weight:800">Rejected</div>
+            <div style="color:#475569;font-size:13px">Fix and re-upload</div>
+          </div>
+          <span class="badge">${docRejected}</span>
+        </div>
+      `;
+
+      const recent = documents.slice(0, 2);
+      for (const d of recent) {
+        const div = document.createElement("div");
+        div.className = "mock-item";
+        div.innerHTML = `
+          <div>
+            <div style="font-weight:800">${d.DocType}</div>
+            <div style="color:#475569;font-size:13px">${d.HRComment || "No comment"}</div>
+          </div>
+          <span class="badge">${d.Status}</span>
+        `;
+        docsPreview.appendChild(div);
+      }
+
+      if (!documents.length) {
+        docsPreview.innerHTML += `<div class="mock-item"><div><div style="font-weight:800">No documents uploaded yet</div></div><span class="badge">0</span></div>`;
+      }
+
+      if (docsMsg) docsMsg.textContent = "";
+    }
+
+    // -------- TRAINING PREVIEW (top 5) --------
+    if (trainTbody) {
+      trainTbody.innerHTML = "";
+
+      for (const t of trainings.slice(0, 5)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${t.Title}</td>
+          <td>${fmtDT(t.StartsAt)}</td>
+          <td>${t.Location || "-"}</td>
+          <td>${t.Attendance}</td>
+        `;
+        trainTbody.appendChild(tr);
+      }
+
+      if (!trainings.length) {
+        trainTbody.innerHTML = `<tr><td colspan="4">No trainings assigned yet.</td></tr>`;
+      }
+      if (trainMsg) trainMsg.textContent = "";
+    }
+
+    // -------- EQUIPMENT PREVIEW (top 5) --------
+    if (equipTbody) {
+      equipTbody.innerHTML = "";
+
+      for (const e of myEquip.slice(0, 5)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${e.ItemName}</td>
+          <td>${e.SerialNumber || "-"}</td>
+          <td>${fmtDT(e.AssignedAt)}</td>
+          <td>${e.EmployeeAck ? "Yes" : "No"}</td>
+          <td>${e.ReturnedAt ? fmtDT(e.ReturnedAt) : "-"}</td>
+        `;
+        equipTbody.appendChild(tr);
+      }
+
+      if (!myEquip.length) {
+        equipTbody.innerHTML = `<tr><td colspan="5">No equipment assigned yet.</td></tr>`;
+      }
+      if (equipMsg) equipMsg.textContent = "";
+    }
+  } catch (err) {
+    // show error in whichever message element exists
+    const anyMsg =
+      summaryMsg || checklistMsg || docsMsg || trainMsg || equipMsg;
+    if (anyMsg) {
+      anyMsg.textContent = err.message;
+      anyMsg.style.color = "crimson";
     }
   }
 }
