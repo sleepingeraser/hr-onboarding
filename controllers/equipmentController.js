@@ -1,6 +1,6 @@
 const { sql, getPool } = require("../config/dbConfig");
 
-async function createEquipment(req, res) {
+async function hrCreateEquipment(req, res) {
   try {
     const { itemName, serialNumber, category } = req.body || {};
     if (!itemName) return res.status(400).json({ message: "Missing itemName" });
@@ -22,7 +22,7 @@ async function createEquipment(req, res) {
   }
 }
 
-async function listEquipment(req, res) {
+async function hrListEquipment(req, res) {
   try {
     const p = await getPool();
     const rows = await p.request().query(`
@@ -30,7 +30,6 @@ async function listEquipment(req, res) {
       FROM Equipment
       ORDER BY CreatedAt DESC
     `);
-
     res.json({ equipment: rows.recordset });
   } catch (e) {
     console.error(e);
@@ -38,10 +37,9 @@ async function listEquipment(req, res) {
   }
 }
 
-async function listEmployees(req, res) {
+async function hrListEmployees(req, res) {
   try {
     const p = await getPool();
-
     const rows = await p.request().query(`
       SELECT
         u.UserId,
@@ -61,7 +59,6 @@ async function listEmployees(req, res) {
         lastEq.AssignedAt AS LastAssignedAt,
         lastEq.ReturnedAt AS LastReturnedAt,
         lastEq.EmployeeAck AS LastEmployeeAck
-
       FROM Users u
       OUTER APPLY (
         SELECT TOP 1
@@ -86,14 +83,15 @@ async function listEmployees(req, res) {
   }
 }
 
-async function assignEquipment(req, res) {
+async function hrAssignEquipment(req, res) {
   try {
     const { userId, equipmentId, dueBackAt, notes } = req.body || {};
     const uid = Number(userId);
     const eid = Number(equipmentId);
 
-    if (!uid || !eid)
+    if (!uid || !eid) {
       return res.status(400).json({ message: "Missing userId/equipmentId" });
+    }
 
     const p = await getPool();
 
@@ -104,9 +102,9 @@ async function assignEquipment(req, res) {
 
     if (!eq.recordset.length)
       return res.status(404).json({ message: "Equipment not found" });
-
-    if (eq.recordset[0].Status !== "AVAILABLE")
+    if (eq.recordset[0].Status !== "AVAILABLE") {
       return res.status(409).json({ message: "Equipment not available" });
+    }
 
     await p
       .request()
@@ -127,7 +125,7 @@ async function assignEquipment(req, res) {
   }
 }
 
-async function listAssignments(req, res) {
+async function hrListAssignments(req, res) {
   try {
     const p = await getPool();
     const rows = await p.request().query(`
@@ -139,7 +137,6 @@ async function listAssignments(req, res) {
       JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
       ORDER BY ue.AssignedAt DESC
     `);
-
     res.json({ assignments: rows.recordset });
   } catch (e) {
     console.error(e);
@@ -147,14 +144,13 @@ async function listAssignments(req, res) {
   }
 }
 
-async function markReturned(req, res) {
+async function hrMarkReturned(req, res) {
   try {
     const assignmentId = Number(req.params.assignmentId);
     if (!assignmentId)
       return res.status(400).json({ message: "Invalid assignmentId" });
 
     const p = await getPool();
-
     const row = await p
       .request()
       .input("AssignmentId", sql.Int, assignmentId)
@@ -164,7 +160,6 @@ async function markReturned(req, res) {
 
     if (!row.recordset.length)
       return res.status(404).json({ message: "Not found" });
-
     if (row.recordset[0].ReturnedAt)
       return res.status(409).json({ message: "Already returned" });
 
@@ -174,13 +169,8 @@ async function markReturned(req, res) {
       .request()
       .input("AssignmentId", sql.Int, assignmentId)
       .input("EquipmentId", sql.Int, equipmentId).query(`
-        UPDATE UserEquipment
-        SET ReturnedAt=SYSDATETIME()
-        WHERE AssignmentId=@AssignmentId;
-
-        UPDATE Equipment
-        SET Status='AVAILABLE'
-        WHERE EquipmentId=@EquipmentId;
+        UPDATE UserEquipment SET ReturnedAt=SYSDATETIME() WHERE AssignmentId=@AssignmentId;
+        UPDATE Equipment SET Status='AVAILABLE' WHERE EquipmentId=@EquipmentId;
       `);
 
     res.json({ message: "Returned" });
@@ -190,19 +180,18 @@ async function markReturned(req, res) {
   }
 }
 
-async function myEquipment(req, res) {
+async function employeeMyEquipment(req, res) {
   try {
     const p = await getPool();
     const rows = await p.request().input("UserId", sql.Int, req.user.userId)
       .query(`
-        SELECT ue.AssignmentId, ue.AssignedAt, ue.EmployeeAck, ue.ReturnedAt,
+        SELECT ue.AssignmentId, ue.AssignedAt, ue.DueBackAt, ue.Notes, ue.EmployeeAck, ue.ReturnedAt,
                e.ItemName, e.SerialNumber, e.Category
         FROM UserEquipment ue
         JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
         WHERE ue.UserId=@UserId
         ORDER BY ue.AssignedAt DESC
       `);
-
     res.json({ equipment: rows.recordset });
   } catch (e) {
     console.error(e);
@@ -210,7 +199,7 @@ async function myEquipment(req, res) {
   }
 }
 
-async function ackEquipment(req, res) {
+async function employeeAckEquipment(req, res) {
   try {
     const assignmentId = Number(req.params.assignmentId);
     if (!assignmentId)
@@ -234,12 +223,12 @@ async function ackEquipment(req, res) {
 }
 
 module.exports = {
-  createEquipment,
-  listEquipment,
-  listEmployees,
-  assignEquipment,
-  listAssignments,
-  markReturned,
-  myEquipment,
-  ackEquipment,
+  hrCreateEquipment,
+  hrListEquipment,
+  hrListEmployees,
+  hrAssignEquipment,
+  hrListAssignments,
+  hrMarkReturned,
+  employeeMyEquipment,
+  employeeAckEquipment,
 };

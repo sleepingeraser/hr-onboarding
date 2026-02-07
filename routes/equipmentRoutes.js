@@ -3,40 +3,55 @@ const { authRequired, roleRequired } = require("../middleware/auth");
 const ctrl = require("../controllers/equipmentController");
 
 // HR
-router.post("/hr", authRequired, roleRequired("HR"), ctrl.createEquipment);
-router.get("/hr", authRequired, roleRequired("HR"), ctrl.listEquipment);
+router.post(
+  "/hr/equipment",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrCreateEquipment,
+);
+router.get(
+  "/hr/equipment",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrListEquipment,
+);
 router.get(
   "/hr/employees",
   authRequired,
   roleRequired("HR"),
-  ctrl.listEmployees,
+  ctrl.hrListEmployees,
 );
 router.post(
-  "/hr/assign",
+  "/hr/equipment/assign",
   authRequired,
   roleRequired("HR"),
-  ctrl.assignEquipment,
+  ctrl.hrAssignEquipment,
 );
 router.get(
-  "/hr/assignments",
+  "/hr/equipment/assignments",
   authRequired,
   roleRequired("HR"),
-  ctrl.listAssignments,
+  ctrl.hrListAssignments,
 );
 router.patch(
-  "/hr/assignments/:assignmentId/return",
+  "/hr/equipment/assignments/:assignmentId/return",
   authRequired,
   roleRequired("HR"),
-  ctrl.markReturned,
+  ctrl.hrMarkReturned,
 );
 
 // employee
-router.get("/my", authRequired, roleRequired("EMPLOYEE"), ctrl.myEquipment);
-router.patch(
-  "/my/:assignmentId/ack",
+router.get(
+  "/equipment/my",
   authRequired,
   roleRequired("EMPLOYEE"),
-  ctrl.ackEquipment,
+  ctrl.employeeMyEquipment,
+);
+router.patch(
+  "/equipment/my/:assignmentId/ack",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  ctrl.employeeAckEquipment,
 );
 
 module.exports = router;

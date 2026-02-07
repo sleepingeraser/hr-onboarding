@@ -2,11 +2,27 @@ const router = require("express").Router();
 const { authRequired, roleRequired } = require("../middleware/auth");
 const ctrl = require("../controllers/announcementsController");
 
-// employee
-router.get("/", authRequired, roleRequired("EMPLOYEE"), ctrl.listAnnouncements);
+// anyone logged in
+router.get("/announcements", authRequired, ctrl.listAnnouncements);
 
 // HR
-router.get("/hr/all", authRequired, roleRequired("HR"), ctrl.hrListAll);
-router.post("/hr", authRequired, roleRequired("HR"), ctrl.createAnnouncement);
+router.post(
+  "/hr/announcements",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrCreateAnnouncement,
+);
+router.delete(
+  "/hr/announcements/:id",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrDeleteAnnouncement,
+);
+router.get(
+  "/hr/announcements/all",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrListAllAnnouncements,
+);
 
 module.exports = router;

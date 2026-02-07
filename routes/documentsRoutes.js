@@ -5,23 +5,28 @@ const ctrl = require("../controllers/documentsController");
 
 // employee
 router.post(
-  "/upload",
+  "/documents/upload",
   authRequired,
   roleRequired("EMPLOYEE"),
   upload.single("file"),
   ctrl.uploadDocument,
 );
-router.get("/my", authRequired, roleRequired("EMPLOYEE"), ctrl.myDocuments);
+router.get(
+  "/documents/my",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  ctrl.myDocuments,
+);
 
 // HR
 router.get(
-  "/hr/pending",
+  "/hr/documents/pending",
   authRequired,
   roleRequired("HR"),
   ctrl.pendingDocuments,
 );
 router.patch(
-  "/hr/:docId/review",
+  "/hr/documents/:docId",
   authRequired,
   roleRequired("HR"),
   ctrl.reviewDocument,

@@ -4,10 +4,10 @@ async function listFaqs(req, res) {
   try {
     const p = await getPool();
     const rows = await p.request().query(`
-      SELECT TOP 50 FaqId, Question, Answer, Category, CreatedAt
+      SELECT FaqId, Question, Answer, Category
       FROM FAQs
       WHERE IsActive=1
-      ORDER BY CreatedAt DESC
+      ORDER BY Category ASC, CreatedAt DESC
     `);
     res.json({ faqs: rows.recordset });
   } catch (e) {
@@ -16,22 +16,7 @@ async function listFaqs(req, res) {
   }
 }
 
-async function hrListAll(req, res) {
-  try {
-    const p = await getPool();
-    const rows = await p.request().query(`
-      SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
-      FROM FAQs
-      ORDER BY CreatedAt DESC
-    `);
-    res.json({ faqs: rows.recordset });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Server error" });
-  }
-}
-
-async function createFaq(req, res) {
+async function hrCreateFaq(req, res) {
   try {
     const { question, answer, category } = req.body || {};
     if (!question || !answer)
@@ -54,14 +39,16 @@ async function createFaq(req, res) {
   }
 }
 
-async function deactivateFaq(req, res) {
+async function hrDeactivateFaq(req, res) {
   try {
     const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: "Invalid id" });
+
     const p = await getPool();
-    await p
-      .request()
-      .input("Id", sql.Int, id)
-      .query(`UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id`);
+    await p.request().input("Id", sql.Int, id).query(`
+      UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id
+    `);
+
     res.json({ message: "Deactivated" });
   } catch (e) {
     console.error(e);
@@ -69,4 +56,19 @@ async function deactivateFaq(req, res) {
   }
 }
 
-module.exports = { listFaqs, hrListAll, createFaq, deactivateFaq };
+async function hrListAllFaqs(req, res) {
+  try {
+    const p = await getPool();
+    const rows = await p.request().query(`
+      SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
+      FROM FAQs
+      ORDER BY CreatedAt DESC
+    `);
+    res.json({ faqs: rows.recordset });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+}
+
+module.exports = { listFaqs, hrCreateFaq, hrDeactivateFaq, hrListAllFaqs };

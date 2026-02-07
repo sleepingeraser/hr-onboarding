@@ -9,6 +9,7 @@ const dbConfig = {
     encrypt: String(process.env.DB_ENCRYPT || "false") === "true",
     trustServerCertificate: true,
   },
+  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
 };
 
 let pool;

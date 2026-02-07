@@ -1,25 +1,21 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { sql, getPool } = require("../config/dbConfig");
+const { normalizeEmail } = require("../middleware/auth");
 
 const JWT_SECRET = process.env.JWT_SECRET;
-
-function normalizeEmail(email) {
-  return String(email || "")
-    .trim()
-    .toLowerCase();
-}
 
 async function register(req, res) {
   try {
     const { name, email, password, role } = req.body || {};
     const cleanEmail = normalizeEmail(email);
 
-    if (!name || !cleanEmail || !password || !role)
+    if (!name || !cleanEmail || !password || !role) {
       return res.status(400).json({ message: "Missing fields" });
-
-    if (!["HR", "EMPLOYEE"].includes(role))
+    }
+    if (!["HR", "EMPLOYEE"].includes(role)) {
       return res.status(400).json({ message: "Invalid role" });
+    }
 
     const p = await getPool();
 
@@ -28,8 +24,9 @@ async function register(req, res) {
       .input("Email", sql.NVarChar, cleanEmail)
       .query("SELECT UserId FROM Users WHERE Email=@Email");
 
-    if (exists.recordset.length)
+    if (exists.recordset.length) {
       return res.status(409).json({ message: "Email already registered" });
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -55,8 +52,9 @@ async function login(req, res) {
     const { email, password } = req.body || {};
     const cleanEmail = normalizeEmail(email);
 
-    if (!cleanEmail || !password)
+    if (!cleanEmail || !password) {
       return res.status(400).json({ message: "Missing email/password" });
+    }
 
     const p = await getPool();
     const result = await p

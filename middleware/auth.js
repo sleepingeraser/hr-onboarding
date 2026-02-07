@@ -27,4 +27,10 @@ function roleRequired(role) {
   };
 }
 
-module.exports = { authRequired, roleRequired };
+function normalizeEmail(email) {
+  return String(email || "")
+    .trim()
+    .toLowerCase();
+}
+
+module.exports = { authRequired, roleRequired, normalizeEmail };
