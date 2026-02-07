@@ -529,7 +529,7 @@ app.get(
   },
 );
 
-// HR: list employees (for assignment dropdown)
+// HR: list employees (dashboard + assignment dropdown)
 app.get(
   "/api/hr/employees",
   authRequired,
@@ -537,12 +537,48 @@ app.get(
   async (req, res) => {
     try {
       const p = await getPool();
+
       const rows = await p.request().query(`
-      SELECT UserId, Name, Email
-      FROM Users
-      WHERE Role='EMPLOYEE'
-      ORDER BY Name ASC
-    `);
+        SELECT
+          u.UserId,
+          u.Name,
+          u.Email,
+          u.CreatedAt,
+
+          -- checklist progress
+          (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId) AS ChecklistTotal,
+          (SELECT COUNT(*) FROM UserChecklist uc WHERE uc.UserId = u.UserId AND uc.Status='DONE') AS ChecklistDone,
+
+          -- documents pending
+          (SELECT COUNT(*) FROM Documents d WHERE d.UserId = u.UserId AND d.Status='PENDING') AS PendingDocs,
+
+          -- currently borrowed (not yet returned)
+          (SELECT COUNT(*) FROM UserEquipment ue WHERE ue.UserId = u.UserId AND ue.ReturnedAt IS NULL) AS BorrowingNow,
+
+          -- latest equipment assignment + returned date (if any)
+          lastEq.ItemName AS LastItemName,
+          lastEq.SerialNumber AS LastSerialNumber,
+          lastEq.AssignedAt AS LastAssignedAt,
+          lastEq.ReturnedAt AS LastReturnedAt,
+          lastEq.EmployeeAck AS LastEmployeeAck
+
+        FROM Users u
+        OUTER APPLY (
+          SELECT TOP 1
+            e.ItemName,
+            e.SerialNumber,
+            ue.AssignedAt,
+            ue.ReturnedAt,
+            ue.EmployeeAck
+          FROM UserEquipment ue
+          JOIN Equipment e ON e.EquipmentId = ue.EquipmentId
+          WHERE ue.UserId = u.UserId
+          ORDER BY ue.AssignedAt DESC
+        ) lastEq
+        WHERE u.Role='EMPLOYEE'
+        ORDER BY u.Name ASC
+      `);
+
       res.json({ employees: rows.recordset });
     } catch (e) {
       console.error(e);
