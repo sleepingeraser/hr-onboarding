@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
-// routes (mounted BEFORE endpoints)
+// routes
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api", require("./routes/checklistRoutes"));
 app.use("/api", require("./routes/documentsRoutes"));
