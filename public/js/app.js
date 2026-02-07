@@ -124,7 +124,7 @@ async function loadDashboard(roleExpected) {
       status.style.color = "green";
     }
 
-    // NEW: load dashboard widgets
+    // load dashboard widgets
     if (roleExpected === "HR") {
       await loadHRDashboardWidgets();
     } else {
@@ -402,7 +402,7 @@ async function loadEmployeeDashboardWidgets() {
   }
 }
 
-// ---------------- HR HOME SECTIONS (NEW) ----------------
+// ---------------- HR HOME SECTIONS ----------------
 async function loadHRHomeSections() {
   const pendingTbody = document.getElementById("hrPendingPreviewTbody");
   const pendingMsg = document.getElementById("hrPendingPreviewMsg");
@@ -450,7 +450,6 @@ async function loadHRHomeSections() {
     try {
       if (trainMsg) trainMsg.textContent = "";
 
-      // requires the new backend endpoint: GET /api/hr/trainings
       const data = await api("/api/hr/trainings");
       const trainings = data.trainings || [];
 
@@ -494,7 +493,6 @@ async function loadEmployeeHomeSections() {
   const equipTbody = document.getElementById("empEquipPreviewTbody");
   const equipMsg = document.getElementById("empEquipMsg");
 
-  // If none exist (not on employee.html), do nothing
   if (
     !summaryGrid &&
     !checklistPreview &&
@@ -566,7 +564,7 @@ async function loadEmployeeHomeSections() {
     }
     if (summaryMsg) summaryMsg.textContent = "";
 
-    // -------- CHECKLIST PREVIEW (top 4 pending) --------
+    // -------- CHECKLIST PREVIEW --------
     if (checklistPreview) {
       const pending = items.filter((x) => x.Status !== "DONE").slice(0, 4);
       checklistPreview.innerHTML = "";
@@ -590,7 +588,7 @@ async function loadEmployeeHomeSections() {
       if (checklistMsg) checklistMsg.textContent = "";
     }
 
-    // -------- DOCS PREVIEW (counts + last 2 docs) --------
+    // -------- DOCS PREVIEW --------
     if (docsPreview) {
       docsPreview.innerHTML = `
         <div class="mock-item">
@@ -630,7 +628,7 @@ async function loadEmployeeHomeSections() {
       if (docsMsg) docsMsg.textContent = "";
     }
 
-    // -------- TRAINING PREVIEW (top 5) --------
+    // -------- TRAINING PREVIEW --------
     if (trainTbody) {
       trainTbody.innerHTML = "";
 
@@ -651,7 +649,7 @@ async function loadEmployeeHomeSections() {
       if (trainMsg) trainMsg.textContent = "";
     }
 
-    // -------- EQUIPMENT PREVIEW (top 5) --------
+    // -------- EQUIPMENT PREVIEW --------
     if (equipTbody) {
       equipTbody.innerHTML = "";
 
@@ -673,7 +671,6 @@ async function loadEmployeeHomeSections() {
       if (equipMsg) equipMsg.textContent = "";
     }
   } catch (err) {
-    // show error in whichever message element exists
     const anyMsg =
       summaryMsg || checklistMsg || docsMsg || trainMsg || equipMsg;
     if (anyMsg) {
@@ -924,7 +921,6 @@ async function createTraining(e) {
     }
     e.target.reset();
 
-    //refresh HR dashboard preview table if you're on hr.html
     await loadHRHomeSections();
   } catch (err) {
     if (msg) {
@@ -934,7 +930,7 @@ async function createTraining(e) {
   }
 }
 
-// ---------------- EQUIPMENT (Employee) ----------------
+// ---------------- EQUIPMENT (employee) ----------------
 async function loadMyEquipment() {
   const tbody = document.getElementById("equipTbody");
   const msg = document.getElementById("msg");
@@ -1154,9 +1150,25 @@ async function loadAnnouncementsAndFaqs() {
   const announce = document.getElementById("announceList");
   const faq = document.getElementById("faqList");
   const msg = document.getElementById("msg");
+
+  const hrPanel = document.getElementById("hrAdminPanel");
+  const hrAnnManage = document.getElementById("hrAnnManageList");
+  const hrFaqManage = document.getElementById("hrFaqManageList");
+
+  const empDashLink = document.getElementById("empDashLink");
+  const hrDashLink = document.getElementById("hrDashLink");
+
   if (msg) msg.textContent = "";
 
   try {
+    const me = await api("/api/me");
+    const isHR = me.user.role === "HR";
+
+    // role-based nav
+    if (empDashLink) empDashLink.style.display = isHR ? "none" : "inline-flex";
+    if (hrDashLink) hrDashLink.style.display = isHR ? "inline-flex" : "none";
+
+    // public view
     const [a, f] = await Promise.all([
       api("/api/announcements"),
       api("/api/faqs"),
@@ -1171,11 +1183,11 @@ async function loadAnnouncementsAndFaqs() {
                 <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                   <div>
                     <div style="font-weight:900">${x.Title}</div>
-                    <div style="color:var(--muted); font-size:13px">${new Date(
-                      x.CreatedAt,
-                    ).toLocaleString()} • ${x.Audience}</div>
+                    <div style="color:var(--muted); font-size:13px">
+                      ${new Date(x.CreatedAt).toLocaleString()} • ${x.Audience}
+                    </div>
                   </div>
-                  <span class="badge">New</span>
+                  <span class="badge">Live</span>
                 </div>
                 <div style="margin-top:8px; white-space:pre-wrap">${x.Body}</div>
               </div>
@@ -1200,6 +1212,161 @@ async function loadAnnouncementsAndFaqs() {
             .join("")
         : `<div class="feature">No FAQs yet.</div>`;
     }
+
+    // HR management view
+    if (hrPanel) hrPanel.style.display = isHR ? "block" : "none";
+
+    if (isHR) {
+      const [allA, allF] = await Promise.all([
+        api("/api/hr/announcements/all"),
+        api("/api/hr/faqs/all"),
+      ]);
+
+      if (hrAnnManage) {
+        hrAnnManage.innerHTML = (allA.announcements || []).length
+          ? allA.announcements
+              .map(
+                (x) => `
+                <div class="feature">
+                  <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                    <div>
+                      <div style="font-weight:900">${x.Title}</div>
+                      <div style="color:var(--muted); font-size:13px">
+                        ${new Date(x.CreatedAt).toLocaleString()} • ${x.Audience}
+                      </div>
+                    </div>
+                    <button class="btn" onclick="deleteAnnouncement(${x.AnnouncementId})">Delete</button>
+                  </div>
+                  <div style="margin-top:8px; white-space:pre-wrap">${x.Body}</div>
+                </div>
+              `,
+              )
+              .join("")
+          : `<div class="feature">No announcements created yet.</div>`;
+      }
+
+      if (hrFaqManage) {
+        hrFaqManage.innerHTML = (allF.faqs || []).length
+          ? allF.faqs
+              .map((x) => {
+                const status = x.IsActive ? "ACTIVE" : "INACTIVE";
+                return `
+                  <div class="feature">
+                    <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                      <div>
+                        <div style="font-weight:900">${x.Question}</div>
+                        <div style="margin-top:6px; white-space:pre-wrap">${x.Answer}</div>
+                        <div style="margin-top:8px; color:var(--muted); font-size:13px">
+                          ${x.Category || "General"} • ${status}
+                        </div>
+                      </div>
+                      ${
+                        x.IsActive
+                          ? `<button class="btn" onclick="deactivateFAQ(${x.FaqId})">Deactivate</button>`
+                          : `<span class="badge">Done</span>`
+                      }
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")
+          : `<div class="feature">No FAQs created yet.</div>`;
+      }
+    }
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+// HR actions
+async function createAnnouncement(e) {
+  e.preventDefault();
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  const title = document.getElementById("aTitle")?.value.trim();
+  const audience = document.getElementById("aAudience")?.value;
+  const body = document.getElementById("aBody")?.value.trim();
+
+  try {
+    await api("/api/hr/announcements", {
+      method: "POST",
+      body: JSON.stringify({ title, body, audience }),
+    });
+    e.target.reset();
+    if (msg) {
+      msg.textContent = "Announcement posted!";
+      msg.style.color = "green";
+    }
+    loadAnnouncementsAndFaqs();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+async function deleteAnnouncement(id) {
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+  try {
+    await api(`/api/hr/announcements/${id}`, { method: "DELETE" });
+    if (msg) {
+      msg.textContent = "Deleted.";
+      msg.style.color = "green";
+    }
+    loadAnnouncementsAndFaqs();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+async function createFAQ(e) {
+  e.preventDefault();
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  const question = document.getElementById("fQuestion")?.value.trim();
+  const answer = document.getElementById("fAnswer")?.value.trim();
+  const category = document.getElementById("fCategory")?.value.trim();
+
+  try {
+    await api("/api/hr/faqs", {
+      method: "POST",
+      body: JSON.stringify({ question, answer, category }),
+    });
+    e.target.reset();
+    if (msg) {
+      msg.textContent = "FAQ added!";
+      msg.style.color = "green";
+    }
+    loadAnnouncementsAndFaqs();
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.style.color = "crimson";
+    }
+  }
+}
+
+async function deactivateFAQ(id) {
+  const msg = document.getElementById("msg");
+  if (msg) msg.textContent = "";
+
+  try {
+    await api(`/api/hr/faqs/${id}/deactivate`, { method: "PATCH" });
+    if (msg) {
+      msg.textContent = "FAQ deactivated.";
+      msg.style.color = "green";
+    }
+    loadAnnouncementsAndFaqs();
   } catch (err) {
     if (msg) {
       msg.textContent = err.message;

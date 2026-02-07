@@ -15,8 +15,12 @@
           <div>Announcements & FAQ</div>
         </div>
         <div class="nav-links">
-          <a class="btn btn-ghost" href="/employee.html">← Dashboard</a>
-          <a class="btn btn-ghost" href="/hr.html">HR Dashboard</a>
+          <a id="empDashLink" class="btn btn-ghost" href="/employee.html"
+            >← Dashboard</a
+          >
+          <a id="hrDashLink" class="btn btn-ghost" href="/hr.html"
+            >← HR Dashboard</a
+          >
           <button class="btn" onclick="logout()">Logout</button>
         </div>
       </nav>
@@ -34,6 +38,95 @@
             id="announceList"
             style="display: grid; gap: 10px; margin-bottom: 18px"
           ></div>
+
+          <!-- HR admin panel (hidden for employees) -->
+          <div id="hrAdminPanel" style="display: none">
+            <div class="mock-top" style="margin-top: 14px">
+              <div style="font-weight: 900">HR Admin • Post Announcement</div>
+              <span class="pill">Manage</span>
+            </div>
+
+            <form
+              onsubmit="createAnnouncement(event)"
+              style="display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0"
+            >
+              <input
+                id="aTitle"
+                class="btn"
+                placeholder="Title"
+                style="padding: 12px; min-width: 220px"
+              />
+              <select
+                id="aAudience"
+                class="btn"
+                style="padding: 12px; min-width: 180px"
+              >
+                <option value="ALL">ALL</option>
+                <option value="EMPLOYEE">EMPLOYEE</option>
+                <option value="HR">HR</option>
+              </select>
+              <input
+                id="aBody"
+                class="btn"
+                placeholder="Message"
+                style="padding: 12px; flex: 1; min-width: 260px"
+              />
+              <button class="btn btn-primary" type="submit">Post</button>
+            </form>
+
+            <div
+              id="hrAnnManageList"
+              style="display: grid; gap: 10px; margin-bottom: 18px"
+            ></div>
+
+            <hr
+              style="
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 12px 0;
+              "
+            />
+
+            <div class="mock-top">
+              <div style="font-weight: 900">HR Admin • Create FAQ</div>
+              <span class="pill">Manage</span>
+            </div>
+
+            <form
+              onsubmit="createFAQ(event)"
+              style="display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0"
+            >
+              <input
+                id="fQuestion"
+                class="btn"
+                placeholder="Question"
+                style="padding: 12px; flex: 1; min-width: 260px"
+              />
+              <input
+                id="fAnswer"
+                class="btn"
+                placeholder="Answer"
+                style="padding: 12px; flex: 1; min-width: 260px"
+              />
+              <input
+                id="fCategory"
+                class="btn"
+                placeholder="Category (optional)"
+                style="padding: 12px; min-width: 200px"
+              />
+              <button class="btn btn-primary" type="submit">Add FAQ</button>
+            </form>
+
+            <div id="hrFaqManageList" style="display: grid; gap: 10px"></div>
+
+            <hr
+              style="
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 12px 0;
+              "
+            />
+          </div>
 
           <hr
             style="
