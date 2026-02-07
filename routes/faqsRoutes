@@ -1,0 +1,18 @@
+const router = require("express").Router();
+const { authRequired, roleRequired } = require("../middleware/auth");
+const ctrl = require("../controllers/faqsController");
+
+// employee
+router.get("/", authRequired, roleRequired("EMPLOYEE"), ctrl.listFaqs);
+
+// HR
+router.get("/hr/all", authRequired, roleRequired("HR"), ctrl.hrListAll);
+router.post("/hr", authRequired, roleRequired("HR"), ctrl.createFaq);
+router.patch(
+  "/hr/:id/deactivate",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.deactivateFaq,
+);
+
+module.exports = router;
