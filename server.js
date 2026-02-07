@@ -891,6 +891,48 @@ app.patch(
   },
 );
 
+// HR: list ALL announcements
+app.get(
+  "/api/hr/announcements/all",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+        SELECT AnnouncementId, Title, Body, Audience, CreatedAt
+        FROM Announcements
+        ORDER BY CreatedAt DESC
+      `);
+      res.json({ announcements: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
+// HR: list ALL FAQs
+app.get(
+  "/api/hr/faqs/all",
+  authRequired,
+  roleRequired("HR"),
+  async (req, res) => {
+    try {
+      const p = await getPool();
+      const rows = await p.request().query(`
+        SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
+        FROM FAQs
+        ORDER BY CreatedAt DESC
+      `);
+      res.json({ faqs: rows.recordset });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
+
 app.listen(PORT, () =>
   console.log(`Server running on http://localhost:${PORT}`),
 );
