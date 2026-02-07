@@ -68,7 +68,7 @@ function normalizeEmail(email) {
     .toLowerCase();
 }
 
-// ---------- file upload (documents) ----------
+// ---------- file upload ----------
 const storage = multer.diskStorage({
   destination: (req, file, cb) =>
     cb(null, path.join(__dirname, "public", "uploads")),
@@ -79,7 +79,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// HR list trainings (for HR dashboard preview)
+// HR list trainings
 app.get(
   "/api/hr/trainings",
   authRequired,
@@ -208,7 +208,6 @@ app.get(
     try {
       const p = await getPool();
 
-      // ensure rows exist in UserChecklist for this user (auto-assign all active items)
       await p.request().input("UserId", sql.Int, req.user.userId).query(`
         INSERT INTO UserChecklist (UserId, ItemId)
         SELECT @UserId, c.ItemId
@@ -389,7 +388,7 @@ app.get(
     try {
       const p = await getPool();
 
-      // auto-assign all trainings to user (prototype)
+      // auto-assign all trainings to user
       await p.request().input("UserId", sql.Int, req.user.userId).query(`
         INSERT INTO UserTraining (UserId, TrainingId)
         SELECT @UserId, t.TrainingId
@@ -529,7 +528,7 @@ app.get(
   },
 );
 
-// HR: list employees (dashboard + assignment dropdown)
+// HR: list employees
 app.get(
   "/api/hr/employees",
   authRequired,
@@ -602,7 +601,6 @@ app.post(
 
       const p = await getPool();
 
-      // must be available
       const eq = await p
         .request()
         .input("EquipmentId", sql.Int, eid)
