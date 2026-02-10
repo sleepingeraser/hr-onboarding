@@ -14,6 +14,7 @@ const trainingsRoutes = require("./routes/trainingsRoutes");
 const equipmentRoutes = require("./routes/equipmentRoutes");
 const announcementsRoutes = require("./routes/announcementsRoutes");
 const faqsRoutes = require("./routes/faqsRoutes");
+const frappeRoutes = require("./routes/frappeRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,6 +39,7 @@ app.use("/api", trainingsRoutes);
 app.use("/api", equipmentRoutes);
 app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
+
 
 // add back endpoints your frontend expects
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
