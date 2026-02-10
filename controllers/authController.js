@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { sql, getPool } = require("../config/dbConfig");
 const { normalizeEmail } = require("../middleware/auth");
+const usersModel = require("../models/usersModel");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -17,28 +17,17 @@ async function register(req, res) {
       return res.status(400).json({ message: "Invalid role" });
     }
 
-    const p = await getPool();
-
-    const exists = await p
-      .request()
-      .input("Email", sql.NVarChar, cleanEmail)
-      .query("SELECT UserId FROM Users WHERE Email=@Email");
-
-    if (exists.recordset.length) {
+    const existing = await usersModel.findByEmail(cleanEmail);
+    if (existing)
       return res.status(409).json({ message: "Email already registered" });
-    }
 
     const passwordHash = await bcrypt.hash(password, 10);
-
-    await p
-      .request()
-      .input("Name", sql.NVarChar, String(name).trim())
-      .input("Email", sql.NVarChar, cleanEmail)
-      .input("PasswordHash", sql.NVarChar, passwordHash)
-      .input("Role", sql.NVarChar, role)
-      .query(
-        "INSERT INTO Users (Name, Email, PasswordHash, Role) VALUES (@Name, @Email, @PasswordHash, @Role)",
-      );
+    await usersModel.createUser({
+      name,
+      email: cleanEmail,
+      passwordHash,
+      role,
+    });
 
     return res.status(201).json({ message: "Registered successfully" });
   } catch (e) {
@@ -56,15 +45,7 @@ async function login(req, res) {
       return res.status(400).json({ message: "Missing email/password" });
     }
 
-    const p = await getPool();
-    const result = await p
-      .request()
-      .input("Email", sql.NVarChar, cleanEmail)
-      .query(
-        "SELECT UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email",
-      );
-
-    const user = result.recordset[0];
+    const user = await usersModel.findByEmail(cleanEmail);
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const ok = await bcrypt.compare(password, user.PasswordHash);

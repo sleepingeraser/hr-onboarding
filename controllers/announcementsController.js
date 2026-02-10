@@ -1,18 +1,10 @@
-const { sql, getPool } = require("../config/dbConfig");
+const announcementsModel = require("../models/announcementsModel");
 
 async function listAnnouncements(req, res) {
   try {
     const role = req.user?.role || "EMPLOYEE";
-    const p = await getPool();
-
-    const rows = await p.request().input("Role", sql.NVarChar, role).query(`
-        SELECT AnnouncementId, Title, Body, Audience, CreatedAt
-        FROM Announcements
-        WHERE Audience='ALL' OR Audience=@Role
-        ORDER BY CreatedAt DESC
-      `);
-
-    res.json({ announcements: rows.recordset });
+    const announcements = await announcementsModel.listForRole(role);
+    res.json({ announcements });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "Server error" });
@@ -28,16 +20,12 @@ async function hrCreateAnnouncement(req, res) {
       return res.status(400).json({ message: "Invalid audience" });
     }
 
-    const p = await getPool();
-    await p
-      .request()
-      .input("Title", sql.NVarChar, title.trim())
-      .input("Body", sql.NVarChar, body)
-      .input("Audience", sql.NVarChar, audience)
-      .input("CreatedByUserId", sql.Int, req.user.userId).query(`
-        INSERT INTO Announcements (Title, Body, Audience, CreatedByUserId)
-        VALUES (@Title, @Body, @Audience, @CreatedByUserId)
-      `);
+    await announcementsModel.createAnnouncement({
+      title,
+      body,
+      audience,
+      createdByUserId: req.user.userId,
+    });
 
     res.status(201).json({ message: "Announcement posted" });
   } catch (e) {
@@ -51,11 +39,7 @@ async function hrDeleteAnnouncement(req, res) {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid id" });
 
-    const p = await getPool();
-    await p.request().input("Id", sql.Int, id).query(`
-      DELETE FROM Announcements WHERE AnnouncementId=@Id
-    `);
-
+    await announcementsModel.deleteAnnouncement(id);
     res.json({ message: "Deleted" });
   } catch (e) {
     console.error(e);
@@ -65,13 +49,8 @@ async function hrDeleteAnnouncement(req, res) {
 
 async function hrListAllAnnouncements(req, res) {
   try {
-    const p = await getPool();
-    const rows = await p.request().query(`
-      SELECT AnnouncementId, Title, Body, Audience, CreatedAt
-      FROM Announcements
-      ORDER BY CreatedAt DESC
-    `);
-    res.json({ announcements: rows.recordset });
+    const announcements = await announcementsModel.listAllAnnouncements();
+    res.json({ announcements });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "Server error" });

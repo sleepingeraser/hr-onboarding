@@ -1,60 +1,52 @@
-const { sql, getPool } = require("../config/dbConfig");
+const documentsModel = require("../models/documentsModel");
 
-async function getChecklist(req, res) {
+async function uploadDocument(req, res) {
   try {
-    const p = await getPool();
+    const { docType } = req.body || {};
+    if (!docType) return res.status(400).json({ message: "Missing docType" });
+    if (!req.file) return res.status(400).json({ message: "Missing file" });
 
-    await p.request().input("UserId", sql.Int, req.user.userId).query(`
-      INSERT INTO UserChecklist (UserId, ItemId)
-      SELECT @UserId, c.ItemId
-      FROM ChecklistItems c
-      WHERE c.IsActive=1
-        AND NOT EXISTS (
-          SELECT 1 FROM UserChecklist uc
-          WHERE uc.UserId=@UserId AND uc.ItemId=c.ItemId
-        )
-    `);
+    const fileUrl = `/uploads/${req.file.filename}`;
+    await documentsModel.createDocument(req.user.userId, docType, fileUrl);
 
-    const items = await p.request().input("UserId", sql.Int, req.user.userId)
-      .query(`
-        SELECT c.ItemId, c.Title, c.Stage, c.Description,
-               uc.Status, uc.UpdatedAt
-        FROM ChecklistItems c
-        JOIN UserChecklist uc ON uc.ItemId=c.ItemId AND uc.UserId=@UserId
-        WHERE c.IsActive=1
-        ORDER BY
-          CASE c.Stage WHEN 'DAY1' THEN 1 WHEN 'WEEK1' THEN 2 ELSE 3 END,
-          c.ItemId
-      `);
-
-    res.json({ items: items.recordset });
+    res.json({ message: "Uploaded", fileUrl });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "Server error" });
   }
 }
 
-async function updateChecklistItem(req, res) {
+async function myDocuments(req, res) {
   try {
-    const itemId = Number(req.params.itemId);
-    const { status } = req.body || {};
+    const documents = await documentsModel.listMyDocuments(req.user.userId);
+    res.json({ documents });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+}
 
-    if (!itemId) return res.status(400).json({ message: "Invalid itemId" });
-    if (!["PENDING", "DONE"].includes(status)) {
+async function pendingDocuments(req, res) {
+  try {
+    const documents = await documentsModel.listPendingDocuments();
+    res.json({ documents });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Server error" });
+  }
+}
+
+async function reviewDocument(req, res) {
+  try {
+    const docId = Number(req.params.docId);
+    const { status, comment } = req.body || {};
+
+    if (!docId) return res.status(400).json({ message: "Invalid docId" });
+    if (!["APPROVED", "REJECTED"].includes(status)) {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const p = await getPool();
-    await p
-      .request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("ItemId", sql.Int, itemId)
-      .input("Status", sql.NVarChar, status).query(`
-        UPDATE UserChecklist
-        SET Status=@Status, UpdatedAt=SYSDATETIME()
-        WHERE UserId=@UserId AND ItemId=@ItemId
-      `);
-
+    await documentsModel.reviewDocument(docId, status, comment);
     res.json({ message: "Updated" });
   } catch (e) {
     console.error(e);
@@ -62,4 +54,9 @@ async function updateChecklistItem(req, res) {
   }
 }
 
-module.exports = { getChecklist, updateChecklistItem };
+module.exports = {
+  uploadDocument,
+  myDocuments,
+  pendingDocuments,
+  reviewDocument,
+};
