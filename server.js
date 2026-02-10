@@ -43,14 +43,14 @@ app.use("/api", faqsRoutes);
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 
 app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
-  res.json({ message: "Hello HR ✅" }),
+  res.json({ message: "Hello HR" }),
 );
 
 app.get(
   "/api/employee/ping",
   authRequired,
   roleRequired("EMPLOYEE"),
-  (req, res) => res.json({ message: "Hello Employee ✅" }),
+  (req, res) => res.json({ message: "Hello Employee" }),
 );
 
 // start server after DB connects
