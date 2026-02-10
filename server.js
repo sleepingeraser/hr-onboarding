@@ -39,7 +39,7 @@ app.use("/api", trainingsRoutes);
 app.use("/api", equipmentRoutes);
 app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
-
+app.use("/api", frappeRoutes);
 
 // add back endpoints your frontend expects
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
