@@ -4,6 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const { getPool } = require("./config/dbConfig");
+const { authRequired, roleRequired } = require("./middleware/auth");
 
 // routes
 const authRoutes = require("./routes/authRoutes");
@@ -12,7 +13,7 @@ const documentsRoutes = require("./routes/documentsRoutes");
 const trainingsRoutes = require("./routes/trainingsRoutes");
 const equipmentRoutes = require("./routes/equipmentRoutes");
 const announcementsRoutes = require("./routes/announcementsRoutes");
-const faqsRoutes = require("./routes/faqsRoutes"); // make sure file is faqsRoutes.js
+const faqsRoutes = require("./routes/faqsRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,20 @@ app.use("/api", trainingsRoutes);
 app.use("/api", equipmentRoutes);
 app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
+
+// add back endpoints your frontend expects
+app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
+
+app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
+  res.json({ message: "Hello HR ✅" }),
+);
+
+app.get(
+  "/api/employee/ping",
+  authRequired,
+  roleRequired("EMPLOYEE"),
+  (req, res) => res.json({ message: "Hello Employee ✅" }),
+);
 
 // start server after DB connects
 (async () => {
