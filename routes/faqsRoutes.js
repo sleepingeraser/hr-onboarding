@@ -1,30 +1,23 @@
-const express = require("express");
-const router = express.Router();
-
+const router = require("express").Router();
 const { authRequired, roleRequired } = require("../middleware/auth");
-const faqsController = require("../controllers/faqsController");
+const ctrl = require("../controllers/faqsController");
 
-router.get("/faqs", authRequired, faqsController.listFaqs);
+// anyone logged in
+router.get("/faqs", authRequired, ctrl.listFaqs);
 
-router.get(
-  "/hr/faqs/all",
-  authRequired,
-  roleRequired("HR"),
-  faqsController.hrListAllFaqs,
-);
-
-router.post(
-  "/hr/faqs",
-  authRequired,
-  roleRequired("HR"),
-  faqsController.hrCreateFaq,
-);
-
+// HR
+router.post("/hr/faqs", authRequired, roleRequired("HR"), ctrl.hrCreateFaq);
 router.patch(
   "/hr/faqs/:id/deactivate",
   authRequired,
   roleRequired("HR"),
-  faqsController.hrDeactivateFaq,
+  ctrl.hrDeactivateFaq,
+);
+router.get(
+  "/hr/faqs/all",
+  authRequired,
+  roleRequired("HR"),
+  ctrl.hrListAllFaqs,
 );
 
 module.exports = router;
