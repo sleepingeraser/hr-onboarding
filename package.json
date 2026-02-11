@@ -8,6 +8,7 @@
     "jsonwebtoken": "^9.0.3",
     "mssql": "^12.2.0",
     "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
     "uuid": "^13.0.0"
   },
   "name": "hr-onboarding",
