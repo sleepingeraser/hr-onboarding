@@ -1,11 +1,9 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { getPool, sql } = require("../config/dbConfig");
 const { normalizeEmail } = require("../middleware/auth");
-const usersModel = require("../models/usersModel");
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-async function register(req, res) {
+exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body || {};
     const cleanEmail = normalizeEmail(email);
@@ -13,30 +11,42 @@ async function register(req, res) {
     if (!name || !cleanEmail || !password || !role) {
       return res.status(400).json({ message: "Missing fields" });
     }
+
     if (!["HR", "EMPLOYEE"].includes(role)) {
       return res.status(400).json({ message: "Invalid role" });
     }
 
-    const existing = await usersModel.findByEmail(cleanEmail);
-    if (existing)
+    const pool = await getPool();
+
+    const exists = await pool
+      .request()
+      .input("Email", sql.NVarChar, cleanEmail)
+      .query("SELECT UserId FROM Users WHERE Email=@Email");
+
+    if (exists.recordset.length) {
       return res.status(409).json({ message: "Email already registered" });
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    await usersModel.createUser({
-      name,
-      email: cleanEmail,
-      passwordHash,
-      role,
-    });
 
-    return res.status(201).json({ message: "Registered successfully" });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Server error" });
+    await pool
+      .request()
+      .input("Name", sql.NVarChar, name.trim())
+      .input("Email", sql.NVarChar, cleanEmail)
+      .input("PasswordHash", sql.NVarChar, passwordHash)
+      .input("Role", sql.NVarChar, role).query(`
+        INSERT INTO Users (Name, Email, PasswordHash, Role)
+        VALUES (@Name, @Email, @PasswordHash, @Role)
+      `);
+
+    res.status(201).json({ message: "Registered successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
-}
+};
 
-async function login(req, res) {
+exports.login = async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const cleanEmail = normalizeEmail(email);
@@ -45,11 +55,24 @@ async function login(req, res) {
       return res.status(400).json({ message: "Missing email/password" });
     }
 
-    const user = await usersModel.findByEmail(cleanEmail);
-    if (!user) return res.status(401).json({ message: "Invalid credentials" });
+    const pool = await getPool();
 
-    const ok = await bcrypt.compare(password, user.PasswordHash);
-    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+    const result = await pool.request().input("Email", sql.NVarChar, cleanEmail)
+      .query(`
+        SELECT UserId, Name, Email, PasswordHash, Role
+        FROM Users
+        WHERE Email=@Email
+      `);
+
+    const user = result.recordset[0];
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const match = await bcrypt.compare(password, user.PasswordHash);
+    if (!match) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
     const token = jwt.sign(
       {
@@ -58,11 +81,11 @@ async function login(req, res) {
         email: user.Email,
         role: user.Role,
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       { expiresIn: "2h" },
     );
 
-    return res.json({
+    res.json({
       token,
       user: {
         userId: user.UserId,
@@ -71,14 +94,12 @@ async function login(req, res) {
         role: user.Role,
       },
     });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Server error" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
-}
+};
 
-function me(req, res) {
-  return res.json({ user: req.user });
-}
-
-module.exports = { register, login, me };
+exports.me = (req, res) => {
+  res.json({ user: req.user });
+};
