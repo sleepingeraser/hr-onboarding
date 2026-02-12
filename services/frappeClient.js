@@ -18,7 +18,7 @@ function frappeHeaders() {
 async function frappeRequest(path, { method = "GET", body, params = {} } = {}) {
   const url = new URL(`${BASE}${path}`);
 
-  // Add query parameters
+  // add query parameters
   Object.keys(params).forEach((key) =>
     url.searchParams.append(key, params[key]),
   );
@@ -40,7 +40,7 @@ async function frappeRequest(path, { method = "GET", body, params = {} } = {}) {
   return data;
 }
 
-// DocType CRUD operations
+// docType CRUD operations
 function listDocType(doctype, params = {}) {
   return frappeRequest(`/api/resource/${encodeURIComponent(doctype)}`, {
     params,
@@ -79,7 +79,7 @@ function deleteDoc(doctype, name) {
   );
 }
 
-// File upload
+// file upload
 async function uploadFile(file, doctype, docname, fieldname = "file") {
   const formData = new FormData();
   formData.append("file", file);
@@ -103,7 +103,7 @@ async function uploadFile(file, doctype, docname, fieldname = "file") {
   return data;
 }
 
-// Custom method calls
+// custom method calls
 async function callMethod(method, params = {}, body = null) {
   const url = `/api/method/${method}`;
   return frappeRequest(url, {
