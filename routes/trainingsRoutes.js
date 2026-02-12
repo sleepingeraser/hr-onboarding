@@ -2,7 +2,7 @@ const router = require("express").Router();
 const { authRequired, roleRequired } = require("../middleware/auth");
 const ctrl = require("../controllers/trainingsController");
 
-// Employee
+// employee
 router.get(
   "/trainings",
   authRequired,
