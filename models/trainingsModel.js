@@ -1,71 +1,150 @@
-const { getPool, sql } = require("../config/dbConfig");
+const frappe = require("../services/frappeClient");
 
-async function hrListTrainings(limit = 50) {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT TOP (${Number(limit) || 50})
-      TrainingId, Title, StartsAt, Location, Notes
-    FROM Trainings
-    ORDER BY StartsAt DESC
-  `);
-  return rows.recordset;
+class TrainingsModel {
+  async hrListTrainings(limit = 50) {
+    try {
+      const response = await frappe.listDocType("Training Event", {
+        fields: JSON.stringify([
+          "name",
+          "title",
+          "starts_on",
+          "ends_on",
+          "location",
+          "description",
+        ]),
+        order_by: "starts_on desc",
+        limit_page_length: limit,
+      });
+
+      return response.data.map((training) => ({
+        TrainingId: training.name,
+        Title: training.title,
+        StartsAt: training.starts_on,
+        EndsAt: training.ends_on,
+        Location: training.location,
+        Notes: training.description,
+      }));
+    } catch (error) {
+      console.error("Error listing trainings:", error);
+      return [];
+    }
+  }
+
+  async hrCreateTraining({ title, startsAt, endsAt, location, notes }) {
+    return await frappe.createDoc("Training Event", {
+      title,
+      starts_on: startsAt,
+      ends_on: endsAt || startsAt,
+      location,
+      description: notes,
+      training_event_type: "Onboarding",
+    });
+  }
+
+  async ensureUserTrainingRows(userId) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) return;
+
+      const trainings = await frappe.listDocType("Training Event", {
+        filters: JSON.stringify([["training_event_type", "=", "Onboarding"]]),
+      });
+
+      for (const training of trainings.data) {
+        // Check if already enrolled
+        const existing = await frappe.listDocType("Training Event Employee", {
+          filters: JSON.stringify([
+            ["parent", "=", training.name],
+            ["employee", "=", employee.name],
+          ]),
+        });
+
+        if (existing.data.length === 0) {
+          await frappe.createDoc("Training Event Employee", {
+            employee: employee.name,
+            employee_name: employee.employee_name,
+            parent: training.name,
+            parentfield: "employees",
+            parenttype: "Training Event",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error ensuring user training:", error);
+    }
+  }
+
+  async listEmployeeTrainings(userId) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) return [];
+
+      const response = await frappe.listDocType("Training Event Employee", {
+        fields: JSON.stringify([
+          "parent",
+          "parent.title",
+          "parent.starts_on",
+          "parent.location",
+          "parent.description",
+          "status",
+        ]),
+        filters: JSON.stringify([["employee", "=", employee.name]]),
+        order_by: "parent.starts_on asc",
+      });
+
+      return response.data.map((item) => ({
+        TrainingId: item.parent,
+        Title: item.parent_title,
+        StartsAt: item.parent_starts_on,
+        Location: item.parent_location,
+        Notes: item.parent_description,
+        Attendance: item.status === "Attended" ? "ATTENDED" : "UPCOMING",
+      }));
+    } catch (error) {
+      console.error("Error fetching employee trainings:", error);
+      return [];
+    }
+  }
+
+  async updateAttendance(userId, trainingId, attendance) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) throw new Error("Employee not found");
+
+      const enrollments = await frappe.listDocType("Training Event Employee", {
+        filters: JSON.stringify([
+          ["parent", "=", trainingId],
+          ["employee", "=", employee.name],
+        ]),
+      });
+
+      if (enrollments.data.length === 0) {
+        throw new Error("Training enrollment not found");
+      }
+
+      return await frappe.updateDoc(
+        "Training Event Employee",
+        enrollments.data[0].name,
+        {
+          status: attendance === "ATTENDED" ? "Attended" : "Open",
+        },
+      );
+    } catch (error) {
+      console.error("Error updating attendance:", error);
+      throw error;
+    }
+  }
+
+  async getEmployeeByUserId(userId) {
+    try {
+      const response = await frappe.listDocType("Employee", {
+        filters: JSON.stringify([["user_id", "=", userId]]),
+      });
+      return response.data[0] || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
-async function hrCreateTraining({ title, startsAt, location, notes }) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("Title", sql.NVarChar, title)
-    .input("StartsAt", sql.DateTime2, new Date(startsAt))
-    .input("Location", sql.NVarChar, location || null)
-    .input("Notes", sql.NVarChar, notes || null).query(`
-      INSERT INTO Trainings (Title, StartsAt, Location, Notes)
-      VALUES (@Title, @StartsAt, @Location, @Notes)
-    `);
-}
-
-async function ensureUserTrainingRows(userId) {
-  const p = await getPool();
-  await p.request().input("UserId", sql.Int, userId).query(`
-    INSERT INTO UserTraining (UserId, TrainingId)
-    SELECT @UserId, t.TrainingId
-    FROM Trainings t
-    WHERE NOT EXISTS (
-      SELECT 1 FROM UserTraining ut
-      WHERE ut.UserId=@UserId AND ut.TrainingId=t.TrainingId
-    )
-  `);
-}
-
-async function listEmployeeTrainings(userId) {
-  const p = await getPool();
-  const rows = await p.request().input("UserId", sql.Int, userId).query(`
-    SELECT t.TrainingId, t.Title, t.StartsAt, t.Location, t.Notes,
-           ut.Attendance
-    FROM Trainings t
-    JOIN UserTraining ut ON ut.TrainingId=t.TrainingId AND ut.UserId=@UserId
-    ORDER BY t.StartsAt ASC
-  `);
-  return rows.recordset;
-}
-
-async function updateAttendance(userId, trainingId, attendance) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("UserId", sql.Int, userId)
-    .input("TrainingId", sql.Int, trainingId)
-    .input("Attendance", sql.NVarChar, attendance).query(`
-      UPDATE UserTraining
-      SET Attendance=@Attendance
-      WHERE UserId=@UserId AND TrainingId=@TrainingId
-    `);
-}
-
-module.exports = {
-  hrListTrainings,
-  hrCreateTraining,
-  ensureUserTrainingRows,
-  listEmployeeTrainings,
-  updateAttendance,
-};
+module.exports = new TrainingsModel();

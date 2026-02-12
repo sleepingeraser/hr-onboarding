@@ -77,7 +77,6 @@ CREATE TABLE UserTraining (
 )
 
 -- equipment table
-
 CREATE TABLE Equipment (
   EquipmentId INT IDENTITY(1,1) PRIMARY KEY,
   ItemName NVARCHAR(120) NOT NULL,

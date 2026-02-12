@@ -1,121 +1,208 @@
-const { getPool, sql } = require("../config/dbConfig");
+const frappe = require("../services/frappeClient");
 
-async function createEquipment(itemName, serialNumber, category) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("ItemName", sql.NVarChar, itemName.trim())
-    .input("SerialNumber", sql.NVarChar, serialNumber || null)
-    .input("Category", sql.NVarChar, category || null).query(`
-      INSERT INTO Equipment (ItemName, SerialNumber, Category)
-      VALUES (@ItemName, @SerialNumber, @Category)
-    `);
+class EquipmentModel {
+  async createEquipment(itemName, serialNumber, category) {
+    return await frappe.createDoc("Asset", {
+      asset_name: itemName,
+      serial_no: serialNumber,
+      asset_category: category || "IT Equipment",
+      status: "Available",
+      is_active: 1,
+    });
+  }
+
+  async listEquipment() {
+    try {
+      const response = await frappe.listDocType("Asset", {
+        fields: JSON.stringify([
+          "name",
+          "asset_name",
+          "serial_no",
+          "asset_category",
+          "status",
+          "creation",
+        ]),
+        order_by: "creation desc",
+      });
+
+      return response.data.map((item) => ({
+        EquipmentId: item.name,
+        ItemName: item.asset_name,
+        SerialNumber: item.serial_no,
+        Category: item.asset_category,
+        Status: item.status === "Available" ? "AVAILABLE" : "ASSIGNED",
+        CreatedAt: item.creation,
+      }));
+    } catch (error) {
+      console.error("Error listing equipment:", error);
+      return [];
+    }
+  }
+
+  async getEquipmentStatus(equipmentId) {
+    try {
+      const response = await frappe.getDoc("Asset", equipmentId);
+      return {
+        Status: response.data.status === "Available" ? "AVAILABLE" : "ASSIGNED",
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async assignEquipment({ userId, equipmentId, dueBackAt, notes }) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) throw new Error("Employee not found");
+
+      // Update asset status
+      await frappe.updateDoc("Asset", equipmentId, {
+        status: "Assigned",
+      });
+
+      // Create asset movement
+      return await frappe.createDoc("Asset Movement", {
+        asset: equipmentId,
+        employee: employee.name,
+        movement_type: "Issue",
+        movement_date: new Date(),
+        expected_return_date: dueBackAt,
+        reference_doctype: "Employee",
+        reference_name: employee.name,
+        notes,
+      });
+    } catch (error) {
+      console.error("Error assigning equipment:", error);
+      throw error;
+    }
+  }
+
+  async listAssignments() {
+    try {
+      const response = await frappe.listDocType("Asset Movement", {
+        fields: JSON.stringify([
+          "name",
+          "asset",
+          "employee",
+          "movement_date",
+          "expected_return_date",
+          "actual_return_date",
+          "notes",
+          "asset.asset_name",
+          "asset.serial_no",
+          "employee.employee_name",
+          "employee.user_id",
+        ]),
+        filters: JSON.stringify([["docstatus", "=", 1]]),
+        order_by: "movement_date desc",
+      });
+
+      return response.data.map((movement) => ({
+        AssignmentId: movement.name,
+        UserId: movement.employee_user_id,
+        Name: movement.employee_employee_name,
+        EquipmentId: movement.asset,
+        ItemName: movement.asset_asset_name,
+        SerialNumber: movement.asset_serial_no,
+        AssignedAt: movement.movement_date,
+        DueBackAt: movement.expected_return_date,
+        ReturnedAt: movement.actual_return_date,
+        EmployeeAck: movement.actual_return_date ? 1 : 0,
+        Notes: movement.notes,
+      }));
+    } catch (error) {
+      console.error("Error listing assignments:", error);
+      return [];
+    }
+  }
+
+  async getAssignment(assignmentId) {
+    try {
+      const response = await frappe.getDoc("Asset Movement", assignmentId);
+      return {
+        EquipmentId: response.data.asset,
+        ReturnedAt: response.data.actual_return_date,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async markReturned(assignmentId, equipmentId) {
+    try {
+      // Update asset movement
+      await frappe.updateDoc("Asset Movement", assignmentId, {
+        actual_return_date: new Date(),
+      });
+
+      // Update asset status
+      await frappe.updateDoc("Asset", equipmentId, {
+        status: "Available",
+      });
+
+      return { message: "Returned" };
+    } catch (error) {
+      console.error("Error marking returned:", error);
+      throw error;
+    }
+  }
+
+  async listMyEquipment(userId) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) return [];
+
+      const response = await frappe.listDocType("Asset Movement", {
+        fields: JSON.stringify([
+          "name",
+          "asset",
+          "movement_date",
+          "expected_return_date",
+          "actual_return_date",
+          "notes",
+          "asset.asset_name",
+          "asset.serial_no",
+          "asset.asset_category",
+        ]),
+        filters: JSON.stringify([
+          ["employee", "=", employee.name],
+          ["docstatus", "=", 1],
+        ]),
+        order_by: "movement_date desc",
+      });
+
+      return response.data.map((movement) => ({
+        AssignmentId: movement.name,
+        ItemName: movement.asset_asset_name,
+        SerialNumber: movement.asset_serial_no,
+        Category: movement.asset_asset_category,
+        AssignedAt: movement.movement_date,
+        DueBackAt: movement.expected_return_date,
+        ReturnedAt: movement.actual_return_date,
+        EmployeeAck: movement.actual_return_date ? 1 : 0,
+        Notes: movement.notes,
+      }));
+    } catch (error) {
+      console.error("Error fetching my equipment:", error);
+      return [];
+    }
+  }
+
+  async ackEquipment(userId, assignmentId) {
+    // In Frappe, return date serves as acknowledgment
+    return await this.markReturned(assignmentId, null);
+  }
+
+  async getEmployeeByUserId(userId) {
+    try {
+      const response = await frappe.listDocType("Employee", {
+        filters: JSON.stringify([["user_id", "=", userId]]),
+      });
+      return response.data[0] || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
-async function listEquipment() {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT EquipmentId, ItemName, SerialNumber, Category, Status, CreatedAt
-    FROM Equipment
-    ORDER BY CreatedAt DESC
-  `);
-  return rows.recordset;
-}
-
-async function getEquipmentStatus(equipmentId) {
-  const p = await getPool();
-  const row = await p
-    .request()
-    .input("EquipmentId", sql.Int, equipmentId)
-    .query(`SELECT Status FROM Equipment WHERE EquipmentId=@EquipmentId`);
-  return row.recordset[0] || null;
-}
-
-async function assignEquipment({ userId, equipmentId, dueBackAt, notes }) {
-  const p = await getPool();
-
-  await p
-    .request()
-    .input("UserId", sql.Int, userId)
-    .input("EquipmentId", sql.Int, equipmentId)
-    .input("DueBackAt", sql.DateTime2, dueBackAt ? new Date(dueBackAt) : null)
-    .input("Notes", sql.NVarChar, notes || null).query(`
-      INSERT INTO UserEquipment (UserId, EquipmentId, DueBackAt, Notes)
-      VALUES (@UserId, @EquipmentId, @DueBackAt, @Notes);
-
-      UPDATE Equipment SET Status='ASSIGNED' WHERE EquipmentId=@EquipmentId;
-    `);
-}
-
-async function listAssignments() {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT ue.AssignmentId, ue.AssignedAt, ue.DueBackAt, ue.Notes, ue.EmployeeAck, ue.ReturnedAt,
-           u.UserId, u.Name, u.Email,
-           e.EquipmentId, e.ItemName, e.SerialNumber, e.Category
-    FROM UserEquipment ue
-    JOIN Users u ON u.UserId=ue.UserId
-    JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
-    ORDER BY ue.AssignedAt DESC
-  `);
-  return rows.recordset;
-}
-
-async function getAssignment(assignmentId) {
-  const p = await getPool();
-  const row = await p
-    .request()
-    .input("AssignmentId", sql.Int, assignmentId)
-    .query(
-      `SELECT EquipmentId, ReturnedAt FROM UserEquipment WHERE AssignmentId=@AssignmentId`,
-    );
-  return row.recordset[0] || null;
-}
-
-async function markReturned(assignmentId, equipmentId) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("AssignmentId", sql.Int, assignmentId)
-    .input("EquipmentId", sql.Int, equipmentId).query(`
-      UPDATE UserEquipment SET ReturnedAt=SYSDATETIME() WHERE AssignmentId=@AssignmentId;
-      UPDATE Equipment SET Status='AVAILABLE' WHERE EquipmentId=@EquipmentId;
-    `);
-}
-
-async function listMyEquipment(userId) {
-  const p = await getPool();
-  const rows = await p.request().input("UserId", sql.Int, userId).query(`
-    SELECT ue.AssignmentId, ue.AssignedAt, ue.DueBackAt, ue.Notes, ue.EmployeeAck, ue.ReturnedAt,
-           e.ItemName, e.SerialNumber, e.Category
-    FROM UserEquipment ue
-    JOIN Equipment e ON e.EquipmentId=ue.EquipmentId
-    WHERE ue.UserId=@UserId
-    ORDER BY ue.AssignedAt DESC
-  `);
-  return rows.recordset;
-}
-
-async function ackEquipment(userId, assignmentId) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("AssignmentId", sql.Int, assignmentId)
-    .input("UserId", sql.Int, userId).query(`
-      UPDATE UserEquipment
-      SET EmployeeAck=1
-      WHERE AssignmentId=@AssignmentId AND UserId=@UserId
-    `);
-}
-
-module.exports = {
-  createEquipment,
-  listEquipment,
-  getEquipmentStatus,
-  assignEquipment,
-  listAssignments,
-  getAssignment,
-  markReturned,
-  listMyEquipment,
-  ackEquipment,
-};
+module.exports = new EquipmentModel();

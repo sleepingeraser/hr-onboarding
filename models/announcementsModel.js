@@ -1,50 +1,61 @@
-const { getPool, sql } = require("../config/dbConfig");
+const frappe = require("../services/frappeClient");
 
-async function listForRole(role) {
-  const p = await getPool();
-  const rows = await p.request().input("Role", sql.NVarChar, role).query(`
-    SELECT AnnouncementId, Title, Body, Audience, CreatedAt
-    FROM Announcements
-    WHERE Audience='ALL' OR Audience=@Role
-    ORDER BY CreatedAt DESC
-  `);
-  return rows.recordset;
+class AnnouncementsModel {
+  async listForRole(role) {
+    try {
+      const filters = [
+        ["published", "=", 1],
+        ["schedule_from", "<=", new Date().toISOString().split("T")[0]],
+      ];
+
+      if (role !== "HR") {
+        filters.push(["audience", "in", ["ALL", role]]);
+      }
+
+      const response = await frappe.listDocType("Announcement", {
+        fields: JSON.stringify([
+          "name",
+          "title",
+          "body",
+          "audience",
+          "creation",
+          "owner",
+        ]),
+        filters: JSON.stringify(filters),
+        order_by: "creation desc",
+      });
+
+      return response.data.map((doc) => ({
+        AnnouncementId: doc.name,
+        Title: doc.title,
+        Body: doc.body,
+        Audience: doc.audience || "ALL",
+        CreatedAt: doc.creation,
+        CreatedBy: doc.owner,
+      }));
+    } catch (error) {
+      console.error("Error fetching announcements:", error);
+      return [];
+    }
+  }
+
+  async createAnnouncement({ title, body, audience, createdByUserId }) {
+    return await frappe.createDoc("Announcement", {
+      title,
+      body,
+      audience,
+      published: 1,
+      schedule_from: new Date().toISOString().split("T")[0],
+    });
+  }
+
+  async deleteAnnouncement(id) {
+    return await frappe.deleteDoc("Announcement", id);
+  }
+
+  async listAllAnnouncements() {
+    return this.listForRole("HR");
+  }
 }
 
-async function createAnnouncement({ title, body, audience, createdByUserId }) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("Title", sql.NVarChar, title.trim())
-    .input("Body", sql.NVarChar, body)
-    .input("Audience", sql.NVarChar, audience)
-    .input("CreatedByUserId", sql.Int, createdByUserId).query(`
-      INSERT INTO Announcements (Title, Body, Audience, CreatedByUserId)
-      VALUES (@Title, @Body, @Audience, @CreatedByUserId)
-    `);
-}
-
-async function deleteAnnouncement(id) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("Id", sql.Int, id)
-    .query(`DELETE FROM Announcements WHERE AnnouncementId=@Id`);
-}
-
-async function listAllAnnouncements() {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT AnnouncementId, Title, Body, Audience, CreatedAt
-    FROM Announcements
-    ORDER BY CreatedAt DESC
-  `);
-  return rows.recordset;
-}
-
-module.exports = {
-  listForRole,
-  createAnnouncement,
-  deleteAnnouncement,
-  listAllAnnouncements,
-};
+module.exports = new AnnouncementsModel();

@@ -1,57 +1,116 @@
-const { getPool, sql } = require("../config/dbConfig");
+const frappe = require("../services/frappeClient");
 
-async function createDocument(userId, docType, fileUrl) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("UserId", sql.Int, userId)
-    .input("DocType", sql.NVarChar, docType)
-    .input("FileUrl", sql.NVarChar, fileUrl).query(`
-      INSERT INTO Documents (UserId, DocType, FileUrl)
-      VALUES (@UserId, @DocType, @FileUrl)
-    `);
+class DocumentsModel {
+  async createDocument(userId, docType, fileUrl, fileName) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) throw new Error("Employee not found");
+
+      return await frappe.createDoc("Employee Document", {
+        employee: employee.name,
+        document_type: docType,
+        file_url: fileUrl,
+        file_name: fileName,
+        status: "Pending",
+      });
+    } catch (error) {
+      console.error("Error creating document:", error);
+      throw error;
+    }
+  }
+
+  async listMyDocuments(userId) {
+    try {
+      const employee = await this.getEmployeeByUserId(userId);
+      if (!employee) return [];
+
+      const response = await frappe.listDocType("Employee Document", {
+        fields: JSON.stringify([
+          "name",
+          "document_type",
+          "file_url",
+          "file_name",
+          "status",
+          "hr_comment",
+          "creation",
+        ]),
+        filters: JSON.stringify([["employee", "=", employee.name]]),
+        order_by: "creation desc",
+      });
+
+      return response.data.map((doc) => ({
+        DocId: doc.name,
+        DocType: doc.document_type,
+        FileUrl: doc.file_url,
+        FileName: doc.file_name,
+        Status: doc.status.toUpperCase(),
+        HRComment: doc.hr_comment,
+        UploadedAt: doc.creation,
+      }));
+    } catch (error) {
+      console.error("Error listing documents:", error);
+      return [];
+    }
+  }
+
+  async listPendingDocuments() {
+    try {
+      const response = await frappe.listDocType("Employee Document", {
+        fields: JSON.stringify([
+          "name",
+          "document_type",
+          "file_url",
+          "file_name",
+          "status",
+          "hr_comment",
+          "creation",
+          "employee",
+          "employee.employee_name",
+          "employee.user_id",
+        ]),
+        filters: JSON.stringify([["status", "=", "Pending"]]),
+        order_by: "creation asc",
+      });
+
+      return response.data.map((doc) => ({
+        DocId: doc.name,
+        DocType: doc.document_type,
+        FileUrl: doc.file_url,
+        FileName: doc.file_name,
+        Status: doc.status,
+        HRComment: doc.hr_comment,
+        UploadedAt: doc.creation,
+        UserId: doc.employee_user_id,
+        Name: doc.employee_employee_name,
+      }));
+    } catch (error) {
+      console.error("Error listing pending documents:", error);
+      return [];
+    }
+  }
+
+  async reviewDocument(docId, status, comment) {
+    try {
+      return await frappe.updateDoc("Employee Document", docId, {
+        status: status.toLowerCase(),
+        hr_comment: comment,
+      });
+    } catch (error) {
+      console.error("Error reviewing document:", error);
+      throw error;
+    }
+  }
+
+  async getEmployeeByUserId(userId) {
+    try {
+      const response = await frappe.listDocType("Employee", {
+        filters: JSON.stringify([["user_id", "=", userId]]),
+      });
+      return response.data[0] || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
-async function listMyDocuments(userId) {
-  const p = await getPool();
-  const docs = await p.request().input("UserId", sql.Int, userId).query(`
-    SELECT DocId, DocType, FileUrl, Status, HRComment, UploadedAt
-    FROM Documents
-    WHERE UserId=@UserId
-    ORDER BY UploadedAt DESC
-  `);
-  return docs.recordset;
-}
-
-async function listPendingDocuments() {
-  const p = await getPool();
-  const docs = await p.request().query(`
-    SELECT d.DocId, d.DocType, d.FileUrl, d.Status, d.HRComment, d.UploadedAt,
-           u.UserId, u.Name, u.Email
-    FROM Documents d
-    JOIN Users u ON u.UserId=d.UserId
-    WHERE d.Status='PENDING'
-    ORDER BY d.UploadedAt ASC
-  `);
-  return docs.recordset;
-}
-
-async function reviewDocument(docId, status, comment) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("DocId", sql.Int, docId)
-    .input("Status", sql.NVarChar, status)
-    .input("Comment", sql.NVarChar, comment || null).query(`
-      UPDATE Documents
-      SET Status=@Status, HRComment=@Comment
-      WHERE DocId=@DocId
-    `);
-}
-
-module.exports = {
-  createDocument,
-  listMyDocuments,
-  listPendingDocuments,
-  reviewDocument,
-};
+module.exports = new DocumentsModel();

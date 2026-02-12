@@ -15,9 +15,15 @@ function frappeHeaders() {
   };
 }
 
-async function frappeRequest(path, { method = "GET", body } = {}) {
-  const url = `${BASE}${path}`;
-  const res = await fetch(url, {
+async function frappeRequest(path, { method = "GET", body, params = {} } = {}) {
+  const url = new URL(`${BASE}${path}`);
+
+  // Add query parameters
+  Object.keys(params).forEach((key) =>
+    url.searchParams.append(key, params[key]),
+  );
+
+  const res = await fetch(url.toString(), {
     method,
     headers: frappeHeaders(),
     body: body ? JSON.stringify(body) : undefined,
@@ -34,12 +40,11 @@ async function frappeRequest(path, { method = "GET", body } = {}) {
   return data;
 }
 
+// DocType CRUD operations
 function listDocType(doctype, params = {}) {
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
-  return frappeRequest(
-    `/api/resource/${encodeURIComponent(doctype)}?${qs.toString()}`,
-  );
+  return frappeRequest(`/api/resource/${encodeURIComponent(doctype)}`, {
+    params,
+  });
 }
 
 function getDoc(doctype, name) {
@@ -74,6 +79,40 @@ function deleteDoc(doctype, name) {
   );
 }
 
+// File upload
+async function uploadFile(file, doctype, docname, fieldname = "file") {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("doctype", doctype);
+  formData.append("docname", docname);
+  formData.append("fieldname", fieldname);
+
+  const url = `${BASE}/api/method/upload_file`;
+  const headers = {
+    Authorization: `token ${KEY}:${SECRET}`,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || "File upload failed");
+  return data;
+}
+
+// Custom method calls
+async function callMethod(method, params = {}, body = null) {
+  const url = `/api/method/${method}`;
+  return frappeRequest(url, {
+    method: body ? "POST" : "GET",
+    params,
+    body,
+  });
+}
+
 module.exports = {
   frappeRequest,
   listDocType,
@@ -81,4 +120,6 @@ module.exports = {
   createDoc,
   updateDoc,
   deleteDoc,
+  uploadFile,
+  callMethod,
 };

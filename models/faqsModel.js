@@ -1,49 +1,74 @@
-const { getPool, sql } = require("../config/dbConfig");
+const frappe = require("../services/frappeClient");
 
-async function listActiveFaqs() {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT FaqId, Question, Answer, Category
-    FROM FAQs
-    WHERE IsActive=1
-    ORDER BY Category ASC, CreatedAt DESC
-  `);
-  return rows.recordset;
+class FaqsModel {
+  async listActiveFaqs() {
+    try {
+      const response = await frappe.listDocType("FAQ", {
+        fields: JSON.stringify([
+          "name",
+          "question",
+          "answer",
+          "category",
+          "creation",
+        ]),
+        filters: JSON.stringify([["published", "=", 1]]),
+        order_by: "category asc, creation desc",
+      });
+
+      return response.data.map((doc) => ({
+        FaqId: doc.name,
+        Question: doc.question,
+        Answer: doc.answer,
+        Category: doc.category || "General",
+        IsActive: 1,
+        CreatedAt: doc.creation,
+      }));
+    } catch (error) {
+      console.error("Error fetching FAQs:", error);
+      return [];
+    }
+  }
+
+  async createFaq({ question, answer, category }) {
+    return await frappe.createDoc("FAQ", {
+      question,
+      answer,
+      category: category || "General",
+      published: 1,
+    });
+  }
+
+  async deactivateFaq(id) {
+    return await frappe.updateDoc("FAQ", id, { published: 0 });
+  }
+
+  async listAllFaqs() {
+    try {
+      const response = await frappe.listDocType("FAQ", {
+        fields: JSON.stringify([
+          "name",
+          "question",
+          "answer",
+          "category",
+          "published",
+          "creation",
+        ]),
+        order_by: "creation desc",
+      });
+
+      return response.data.map((doc) => ({
+        FaqId: doc.name,
+        Question: doc.question,
+        Answer: doc.answer,
+        Category: doc.category || "General",
+        IsActive: doc.published ? 1 : 0,
+        CreatedAt: doc.creation,
+      }));
+    } catch (error) {
+      console.error("Error fetching all FAQs:", error);
+      return [];
+    }
+  }
 }
 
-async function createFaq({ question, answer, category }) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("Question", sql.NVarChar, question.trim())
-    .input("Answer", sql.NVarChar, answer)
-    .input("Category", sql.NVarChar, category || null).query(`
-      INSERT INTO FAQs (Question, Answer, Category)
-      VALUES (@Question, @Answer, @Category)
-    `);
-}
-
-async function deactivateFaq(id) {
-  const p = await getPool();
-  await p
-    .request()
-    .input("Id", sql.Int, id)
-    .query(`UPDATE FAQs SET IsActive=0 WHERE FaqId=@Id`);
-}
-
-async function listAllFaqs() {
-  const p = await getPool();
-  const rows = await p.request().query(`
-    SELECT FaqId, Question, Answer, Category, IsActive, CreatedAt
-    FROM FAQs
-    ORDER BY CreatedAt DESC
-  `);
-  return rows.recordset;
-}
-
-module.exports = {
-  listActiveFaqs,
-  createFaq,
-  deactivateFaq,
-  listAllFaqs,
-};
+module.exports = new FaqsModel();
