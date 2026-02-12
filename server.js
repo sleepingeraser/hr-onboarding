@@ -22,19 +22,19 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Serve frontend
+// serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
-// Health check
+// health check
 app.get("/api/ping", (req, res) =>
   res.json({ ok: true, message: "Server is running" }),
 );
 
-// User info endpoint
+// user info endpoint
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 
-// Role-specific ping endpoints
+// role-specific ping endpoints
 app.get("/api/hr/ping", authRequired, roleRequired("HR"), (req, res) =>
   res.json({ message: "Hello HR ✅" }),
 );
@@ -46,7 +46,7 @@ app.get(
   (req, res) => res.json({ message: "Hello Employee ✅" }),
 );
 
-// Mount routes
+// mount routes
 app.use("/api/auth", authRoutes);
 app.use("/api", checklistRoutes);
 app.use("/api", documentsRoutes);
@@ -56,7 +56,7 @@ app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
 app.use("/api", frappeRoutes);
 
-// Error handling middleware
+// error handling middleware
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
   res.status(500).json({
