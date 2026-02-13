@@ -1,10 +1,10 @@
 const sql = require("mssql");
 
 const config = {
-  user: process.env.DB_USER || "sa",
-  password: process.env.DB_PASSWORD || "YourPassword123",
+  user: process.env.DB_USER || "HROnboardingUser",
+  password: process.env.DB_PASSWORD || "koyuki",
   server: process.env.DB_SERVER || "localhost",
-  database: process.env.DB_NAME || "HROnboardingDB",
+  database: process.env.DB_DATABASE || "HROnboardingDB",
   options: {
     encrypt: false,
     trustServerCertificate: true,

@@ -3,270 +3,63 @@ const path = require("path");
 const cors = require("cors");
 require("dotenv").config();
 
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
-
-const { sql, getPool } = require("./config/dbConfig");
+const { getPool } = require("./config/dbConfig");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
-
 app.use(cors());
 app.use(express.json());
 
-// serve frontend
+// serve frontend static files
 app.use(express.static(path.join(__dirname, "public")));
 
 // serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
-// health
-app.get("/api/ping", (req, res) => res.json({ ok: true }));
+// health check
+app.get("/api/ping", (req, res) =>
+  res.json({ success: true, message: "Server is running" }),
+);
 
-function signToken(user) {
-  return jwt.sign(
-    {
-      userId: user.UserId,
-      name: user.Name,
-      email: user.Email,
-      role: user.Role,
-    },
-    JWT_SECRET,
-    { expiresIn: "7d" },
-  );
-}
+// Import routes
+const authRoutes = require("./routes/authRoutes");
+const checklistRoutes = require("./routes/checklistRoutes");
+const documentsRoutes = require("./routes/documentsRoutes");
+const trainingsRoutes = require("./routes/trainingsRoutes");
+const equipmentRoutes = require("./routes/equipmentRoutes");
+const announcementsRoutes = require("./routes/announcementsRoutes");
+const faqsRoutes = require("./routes/faqsRoutes");
+const hrRoutes = require("./routes/hrRoutes");
 
-function authRequired(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [type, token] = header.split(" ");
-  if (type !== "Bearer" || !token) {
-    return res
-      .status(401)
-      .json({ message: "Missing or invalid Authorization header" });
+// Use routes
+app.use("/api/auth", authRoutes);
+app.use("/api", checklistRoutes);
+app.use("/api", documentsRoutes);
+app.use("/api", trainingsRoutes);
+app.use("/api", equipmentRoutes);
+app.use("/api", announcementsRoutes);
+app.use("/api", faqsRoutes);
+app.use("/api", hrRoutes);
+
+// FIXED: Serve index.html for any non-API routes
+// This handles client-side routing without using the problematic wildcard
+app.use((req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith("/api/") || req.path.startsWith("/uploads/")) {
+    return next();
   }
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: "Invalid or expired token" });
-  }
-}
-
-// auth routes
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body || {};
-
-    if (!name || !email || !password || !role) {
-      return res
-        .status(400)
-        .json({ message: "name, email, password, role are required" });
-    }
-    if (!["HR", "EMPLOYEE"].includes(role)) {
-      return res.status(400).json({ message: "role must be HR or EMPLOYEE" });
-    }
-    if (String(password).length < 6) {
-      return res
-        .status(400)
-        .json({ message: "password must be at least 6 characters" });
-    }
-
-    const pool = await getPool();
-
-    // check existing
-    const existing = await pool
-      .request()
-      .input("Email", sql.NVarChar(200), email)
-      .query("SELECT TOP 1 UserId FROM Users WHERE Email=@Email");
-
-    if (existing.recordset.length > 0) {
-      return res.status(409).json({ message: "Email already registered" });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    // insert + return new row
-    const inserted = await pool
-      .request()
-      .input("Name", sql.NVarChar(120), name)
-      .input("Email", sql.NVarChar(200), email)
-      .input("PasswordHash", sql.NVarChar(200), passwordHash)
-      .input("Role", sql.NVarChar(20), role).query(`
-        INSERT INTO Users (Name, Email, PasswordHash, Role)
-        OUTPUT INSERTED.UserId, INSERTED.Name, INSERTED.Email, INSERTED.Role, INSERTED.CreatedAt
-        VALUES (@Name, @Email, @PasswordHash, @Role)
-      `);
-
-    const user = inserted.recordset[0];
-
-    // auto-create checklist for user
-    await pool.request().input("UserId", sql.Int, user.UserId).query(`
-      INSERT INTO UserChecklist (UserId, ItemId, Status)
-      SELECT @UserId, ItemId, 'PENDING'
-      FROM ChecklistItems
-      WHERE IsActive = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM UserChecklist uc WHERE uc.UserId=@UserId AND uc.ItemId=ChecklistItems.ItemId
-        )
-    `);
-
-    // auto-assign trainings
-    await pool.request().input("UserId", sql.Int, user.UserId).query(`
-      INSERT INTO UserTraining (UserId, TrainingId, Attendance)
-      SELECT @UserId, TrainingId, 'UPCOMING'
-      FROM Trainings
-      WHERE NOT EXISTS (
-        SELECT 1 FROM UserTraining ut WHERE ut.UserId=@UserId AND ut.TrainingId=Trainings.TrainingId
-      )
-    `);
-
-    const token = signToken(user);
-    return res.status(201).json({
-      token,
-      user: {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
-      },
-    });
-  } catch (err) {
-    console.error("REGISTER ERROR:", err);
-    return res
-      .status(500)
-      .json({ message: "Server error during registration" });
-  }
+  // For all other routes, serve the index.html
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "email and password are required" });
-    }
-
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Email", sql.NVarChar(200), email)
-      .query(
-        "SELECT TOP 1 UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email",
-      );
-
-    if (result.recordset.length === 0) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    const user = result.recordset[0];
-    const ok = await bcrypt.compare(password, user.PasswordHash);
-    if (!ok) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    const token = signToken(user);
-    return res.json({
-      token,
-      user: {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
-      },
-    });
-  } catch (err) {
-    console.error("LOGIN ERROR:", err);
-    return res.status(500).json({ message: "Server error during login" });
-  }
-});
-
-// frontend calls /api/me
-app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
-
-// HR: get all employees with summary data
-app.get("/api/hr/employees", authRequired, async (req, res) => {
-  if (req.user.role !== "HR") {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-
-  try {
-    const pool = await getPool();
-
-    const result = await pool.request().query(`
-      SELECT 
-        u.UserId,
-        u.Name,
-        u.Email,
-        u.Role,
-        u.CreatedAt,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId) as ChecklistTotal,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId AND Status = 'DONE') as ChecklistDone,
-        (SELECT COUNT(*) FROM Documents WHERE UserId = u.UserId AND Status = 'PENDING') as PendingDocs,
-        (SELECT COUNT(*) FROM UserEquipment WHERE UserId = u.UserId AND ReturnedAt IS NULL) as BorrowingNow,
-        (SELECT TOP 1 ItemName FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastItemName,
-        (SELECT TOP 1 SerialNumber FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastSerialNumber,
-        (SELECT TOP 1 AssignedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastAssignedAt,
-        (SELECT TOP 1 ReturnedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY ReturnedAt DESC) as LastReturnedAt,
-        (SELECT TOP 1 EmployeeAck FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastEmployeeAck
-      FROM Users u
-      WHERE u.Role = 'EMPLOYEE'
-      ORDER BY u.CreatedAt DESC
-    `);
-
-    res.json({ employees: result.recordset });
-  } catch (err) {
-    console.error("GET employees error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-function safeUse(routeBase, modulePath) {
-  try {
-    const r = require(modulePath);
-    app.use(routeBase, r);
-    console.log("Mounted:", modulePath, "at", routeBase);
-  } catch (e) {
-    console.log("Skipped missing route:", modulePath);
-  }
-}
-
-// role ping routes
-app.get("/api/hr/ping", authRequired, (req, res) => {
-  if (req.user.role !== "HR")
-    return res.status(403).json({ message: "Forbidden" });
-  res.json({ message: "HR session active" });
-});
-
-app.get("/api/employee/ping", authRequired, (req, res) => {
-  if (req.user.role !== "EMPLOYEE")
-    return res.status(403).json({ message: "Forbidden" });
-  res.json({ message: "Employee session active" });
-});
-
-safeUse("/api", "./routes/checklistRoutes");
-safeUse("/api", "./routes/documentsRoutes");
-safeUse("/api", "./routes/trainingsRoutes");
-safeUse("/api", "./routes/equipmentRoutes");
-safeUse("/api", "./routes/announcementsRoutes");
-safeUse("/api", "./routes/faqsRoutes");
-
-// DB connects
+// DB connection and server start
 (async () => {
   try {
     await getPool();
     console.log("Connected to MSSQL");
+
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
@@ -275,3 +68,4 @@ safeUse("/api", "./routes/faqsRoutes");
     process.exit(1);
   }
 })();
+
