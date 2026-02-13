@@ -30,7 +30,6 @@ const trainingsRoutes = require("./routes/trainingsRoutes");
 const equipmentRoutes = require("./routes/equipmentRoutes");
 const announcementsRoutes = require("./routes/announcementsRoutes");
 const faqsRoutes = require("./routes/faqsRoutes");
-const hrRoutes = require("./routes/hrRoutes");
 
 // Use routes
 app.use("/api/auth", authRoutes);
@@ -41,16 +40,16 @@ app.use("/api", equipmentRoutes);
 app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
 app.use("/api", hrRoutes);
+app.use("/api", gpEmployeesRoutes);
 
-// FIXED: Serve index.html for any non-API routes
-// This handles client-side routing without using the problematic wildcard
+// serve index.html for any non-API routes
 app.use((req, res, next) => {
-  // Skip API routes
+  // skip API routes
   if (req.path.startsWith("/api/") || req.path.startsWith("/uploads/")) {
     return next();
   }
 
-  // For all other routes, serve the index.html
+  // for all other routes, serve the index.html
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
