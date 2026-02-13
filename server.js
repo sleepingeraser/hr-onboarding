@@ -188,7 +188,7 @@ app.post("/api/auth/login", async (req, res) => {
 // frontend calls /api/me
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 
-// HR: Get all employees with summary data
+// HR: get all employees with summary data
 app.get("/api/hr/employees", authRequired, async (req, res) => {
   if (req.user.role !== "HR") {
     return res.status(403).json({ message: "Forbidden" });
