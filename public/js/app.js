@@ -1,4 +1,4 @@
-const API_BASE = ""; // Empty for same origin
+const API_BASE = "";
 
 // token helpers
 function saveToken(token) {
@@ -41,12 +41,12 @@ async function api(path, options = {}) {
     if (!res.ok) {
       console.log("API error response:", res.status, data);
 
-      // If token expired, clear it
+      // if token expired, clear it
       if (res.status === 401) {
         console.log("Token expired, clearing...");
         clearToken();
 
-        // Only redirect if not already on login page
+        // only redirect if not already on login page
         if (
           !window.location.pathname.includes("login.html") &&
           !window.location.pathname.includes("register.html") &&
@@ -79,7 +79,7 @@ function fmtDT(value) {
 
 // ---------------- AUTH ----------------
 async function registerUser(e) {
-  e.preventDefault(); // Prevent form submission and page refresh
+  e.preventDefault();
   console.log("Register function called");
 
   const name = document.getElementById("name")?.value.trim();
@@ -111,7 +111,7 @@ async function registerUser(e) {
         msg.style.color = "green";
       }
 
-      // Redirect based on role
+      // redirect based on role
       setTimeout(() => {
         if (data.user.role === "HR") {
           window.location.href = "/hr.html";
@@ -130,7 +130,7 @@ async function registerUser(e) {
 }
 
 async function loginUser(e) {
-  e.preventDefault(); // Prevent form submission and page refresh
+  e.preventDefault();
   console.log("Login function called");
 
   const email = document.getElementById("email")?.value.trim();
@@ -160,7 +160,7 @@ async function loginUser(e) {
         msg.style.color = "green";
       }
 
-      // Redirect based on role
+      // redirect based on role
       setTimeout(() => {
         if (data.user.role === "HR") {
           window.location.href = "/hr.html";
@@ -184,7 +184,7 @@ async function loadDashboard(roleExpected) {
   const status = document.getElementById("status");
   const who = document.getElementById("who");
 
-  // Check if token exists
+  // check if token exists
   const token = getToken();
   if (!token) {
     console.log("No token found, redirecting to login");
@@ -271,7 +271,7 @@ async function loadHRDashboardWidgets() {
     const data = await api("/api/hr/employees");
     console.log("HR employees data:", data);
 
-    // Top stats
+    // top stats
     if (stats) {
       const employees = data.employees || [];
       const total = employees.length;
@@ -299,7 +299,7 @@ async function loadHRDashboardWidgets() {
       `;
     }
 
-    // Employee table
+    // employee table
     if (!tbody) return;
     tbody.innerHTML = "";
 
@@ -707,27 +707,96 @@ async function loadTrainingsPage() {
       const tr = document.createElement("tr");
       const dt = new Date(t.StartsAt).toLocaleString();
 
+      // check if training is in the past
+      const isPast = new Date(t.StartsAt) < new Date();
+
+      // determine button style based on status
+      let buttonClass = "btn";
+      let buttonText = "";
+      let isDisabled = false;
+
+      if (t.Attendance === "ATTENDED") {
+        buttonClass = "btn-success";
+        buttonText = "✓ Attended";
+        isDisabled = true;
+      } else if (t.Attendance === "UPCOMING" && isPast) {
+        buttonClass = "btn-warning";
+        buttonText = "⚠ Missed";
+        isDisabled = true;
+      } else if (t.Attendance === "UPCOMING" && !isPast) {
+        buttonClass = "btn-primary";
+        buttonText = "Mark Attended";
+      }
+
       tr.innerHTML = `
-        <td>${t.Title}</td>
-        <td>${dt}</td>
-        <td>${t.Location || "-"}</td>
-        <td>${t.Attendance}</td>
+        <td style="font-weight: 500;">${t.Title}</td>
         <td>
-          <button class="btn ${t.Attendance === "ATTENDED" ? "" : "btn-primary"}">
-            ${t.Attendance === "ATTENDED" ? "Mark Upcoming" : "Mark Attended"}
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-weight: 500;">${new Date(t.StartsAt).toLocaleDateString()}</span>
+            <span style="color: var(--muted); font-size: 12px;">${new Date(t.StartsAt).toLocaleTimeString()}</span>
+          </div>
+        </td>
+        <td>
+          <span style="display: inline-flex; align-items: center; gap: 4px;">
+            <span style="font-size: 16px;">📍</span>
+            ${t.Location || "TBD"}
+          </span>
+        </td>
+        <td>
+          <span class="status-badge status-${t.Attendance.toLowerCase()}">
+            ${t.Attendance}
+          </span>
+        </td>
+        <td>
+          <button class="btn ${buttonClass}" 
+                  data-id="${t.TrainingId}"
+                  ${isDisabled ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ""}>
+            ${buttonText}
           </button>
         </td>
       `;
 
-      tr.querySelector("button").addEventListener("click", async () => {
-        const newVal = t.Attendance === "ATTENDED" ? "UPCOMING" : "ATTENDED";
-        await api(`/api/trainings/${t.TrainingId}/attendance`, {
-          method: "PATCH",
-          body: JSON.stringify({ attendance: newVal }),
-        });
-        loadTrainingsPage();
-      });
+      // add event listener only if button is not disabled
+      const btn = tr.querySelector("button");
+      if (btn && !isDisabled && t.Attendance === "UPCOMING" && !isPast) {
+        btn.addEventListener("click", async () => {
+          // show confirmation dialog
+          if (confirm(`Mark "${t.Title}" as attended?`)) {
+            try {
+              btn.textContent = "Updating...";
+              btn.disabled = true;
 
+              await api(`/api/trainings/${t.TrainingId}/attendance`, {
+                method: "PATCH",
+                body: JSON.stringify({ attendance: "ATTENDED" }),
+              });
+
+              // show success message
+              showTemporaryMessage("Training marked as attended!", "success");
+              loadTrainingsPage();
+            } catch (err) {
+              console.error("Error updating attendance:", err);
+              showTemporaryMessage("Failed to update attendance", "error");
+              btn.disabled = false;
+              btn.textContent = "Mark Attended";
+            }
+          }
+        });
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    // if no trainings found
+    if (data.trainings.length === 0) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td colspan="5" style="text-align: center; padding: 40px; color: var(--muted);">
+          <div style="font-size: 48px; margin-bottom: 16px;">📅</div>
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Trainings Found</div>
+          <div style="font-size: 14px;">Check back later for scheduled training sessions.</div>
+        </td>
+      `;
       tbody.appendChild(tr);
     }
   } catch (err) {
@@ -739,39 +808,33 @@ async function loadTrainingsPage() {
   }
 }
 
-async function createTraining(e) {
-  e.preventDefault();
-  console.log("Create training function called");
+// helper function to show temporary messages
+function showTemporaryMessage(message, type = "info") {
+  const msgDiv = document.getElementById("msg");
+  if (!msgDiv) return;
 
-  const msg = document.getElementById("msg");
-  if (msg) msg.textContent = "";
+  msgDiv.textContent = message;
+  msgDiv.style.color =
+    type === "success" ? "#10b981" : type === "error" ? "#ef4444" : "#2563eb";
+  msgDiv.style.padding = "10px";
+  msgDiv.style.borderRadius = "8px";
+  msgDiv.style.backgroundColor =
+    type === "success" ? "#d1fae5" : type === "error" ? "#fee2e2" : "#dbeafe";
+  msgDiv.style.marginTop = "12px";
+  msgDiv.style.transition = "opacity 0.5s";
 
-  const title = document.getElementById("tTitle")?.value.trim();
-  const startsAt = document.getElementById("tStartsAt")?.value;
-  const location = document.getElementById("tLocation")?.value.trim();
-  const notes = document.getElementById("tNotes")?.value.trim();
-
-  try {
-    await api("/api/hr/trainings", {
-      method: "POST",
-      body: JSON.stringify({ title, startsAt, location, notes }),
-    });
-
-    if (msg) {
-      msg.textContent = "Training created!";
-      msg.style.color = "green";
-    }
-    e.target.reset();
-  } catch (err) {
-    console.error("Error creating training:", err);
-    if (msg) {
-      msg.textContent = err.message;
-      msg.style.color = "crimson";
-    }
-  }
+  setTimeout(() => {
+    msgDiv.style.opacity = "0";
+    setTimeout(() => {
+      msgDiv.textContent = "";
+      msgDiv.style.opacity = "1";
+      msgDiv.style.padding = "";
+      msgDiv.style.backgroundColor = "";
+    }, 500);
+  }, 3000);
 }
 
-// ---------------- EQUIPMENT (Employee) ----------------
+// ---------------- EQUIPMENT (employee) ----------------
 async function loadMyEquipment() {
   console.log("Loading my equipment");
 
@@ -1084,7 +1147,7 @@ async function loadAnnouncementsAndFaqs() {
   }
 }
 
-// Make functions globally available
+// make functions globally available
 window.registerUser = registerUser;
 window.loginUser = loginUser;
 window.logout = logout;
