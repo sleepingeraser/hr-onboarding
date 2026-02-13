@@ -350,6 +350,78 @@ tbody tr:hover {
   color: var(--muted);
 }
 
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  /* Hide browser UI elements when in standalone mode */
+  .browser-only {
+    display: none !important;
+  }
+
+  /* Add some padding for the status bar on iOS */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Install prompt styles */
+.install-prompt {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border-radius: 30px;
+  padding: 12px 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  z-index: 1000;
+  animation: slideUp 0.3s ease;
+}
+
+.install-prompt button {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.install-prompt .close {
+  background: none;
+  color: var(--muted);
+  padding: 8px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 100%);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+/* Add to existing animations */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 /* mobile */
 @media (max-width: 900px) {
   .hero {
