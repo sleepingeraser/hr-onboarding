@@ -22,7 +22,7 @@ app.get("/api/ping", (req, res) =>
   res.json({ success: true, message: "Server is running" }),
 );
 
-// Import routes
+// import routes
 const authRoutes = require("./routes/authRoutes");
 const checklistRoutes = require("./routes/checklistRoutes");
 const documentsRoutes = require("./routes/documentsRoutes");
@@ -31,7 +31,7 @@ const equipmentRoutes = require("./routes/equipmentRoutes");
 const announcementsRoutes = require("./routes/announcementsRoutes");
 const faqsRoutes = require("./routes/faqsRoutes");
 
-// Use routes
+// use routes
 app.use("/api/auth", authRoutes);
 app.use("/api", checklistRoutes);
 app.use("/api", documentsRoutes);
