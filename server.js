@@ -33,7 +33,6 @@ app.get("/api/ping", (req, res) => res.json({ ok: true }));
 // mount routes
 app.use("/api/auth", authRoutes);
 
-// ✅ IMPORTANT: your frontend calls /api/me (NOT /api/auth/me)
 app.get("/api/me", authRequired, (req, res) => res.json({ user: req.user }));
 
 app.use("/api", checklistRoutes);
