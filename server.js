@@ -5,32 +5,13 @@ require("dotenv").config();
 
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const sql = require("mssql");
+
+const { sql, getPool } = require("./config/dbConfig");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
-
-// MSSQL config (set these in .env)
-const sqlConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER || "localhost",
-  database: process.env.DB_DATABASE,
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
-  options: {
-    trustServerCertificate: true,
-    encrypt: String(process.env.DB_ENCRYPT || "false").toLowerCase() === "true",
-    enableArithAbort: true,
-  },
-};
-
-let poolPromise;
-async function getPool() {
-  if (!poolPromise) poolPromise = sql.connect(sqlConfig);
-  return poolPromise;
-}
 
 app.use(cors());
 app.use(express.json());
@@ -45,7 +26,6 @@ app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
 function signToken(user) {
-  // keep payload small + useful
   return jwt.sign(
     {
       userId: user.UserId,
@@ -123,6 +103,7 @@ app.post("/api/auth/register", async (req, res) => {
 
     const user = inserted.recordset[0];
 
+    // auto-create checklist for user
     await pool.request().input("UserId", sql.Int, user.UserId).query(`
       INSERT INTO UserChecklist (UserId, ItemId, Status)
       SELECT @UserId, ItemId, 'PENDING'
@@ -238,7 +219,6 @@ safeUse("/api", "./routes/announcementsRoutes");
 safeUse("/api", "./routes/faqsRoutes");
 
 // DB connects
-
 (async () => {
   try {
     await getPool();
