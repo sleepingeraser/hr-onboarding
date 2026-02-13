@@ -1,21 +1,31 @@
-const API_BASE = "";
+const API_BASE = ""; // Empty for same origin
 
 // token helpers
 function saveToken(token) {
   localStorage.setItem("token", token);
+  console.log("Token saved");
 }
+
 function getToken() {
   return localStorage.getItem("token");
 }
+
 function clearToken() {
   localStorage.removeItem("token");
+  console.log("Token cleared");
 }
 
 // improved fetch wrapper (supports JSON + FormData)
 async function api(path, options = {}) {
   const headers = options.headers || {};
   const token = getToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+    console.log("API call with token to:", path);
+  } else {
+    console.log("API call without token to:", path);
+  }
 
   const isFormData = options.body instanceof FormData;
 
@@ -29,6 +39,25 @@ async function api(path, options = {}) {
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
+      console.log("API error response:", res.status, data);
+
+      // If token expired, clear it
+      if (res.status === 401) {
+        console.log("Token expired, clearing...");
+        clearToken();
+
+        // Only redirect if not already on login page
+        if (
+          !window.location.pathname.includes("login.html") &&
+          !window.location.pathname.includes("register.html") &&
+          !window.location.pathname.includes("index.html")
+        ) {
+          setTimeout(() => {
+            window.location.href = "/login.html";
+          }, 1000);
+        }
+      }
+
       throw new Error(
         data.message || `Request failed with status ${res.status}`,
       );
@@ -50,7 +79,7 @@ function fmtDT(value) {
 
 // ---------------- AUTH ----------------
 async function registerUser(e) {
-  e.preventDefault();
+  e.preventDefault(); // Prevent form submission and page refresh
   console.log("Register function called");
 
   const name = document.getElementById("name")?.value.trim();
@@ -82,14 +111,14 @@ async function registerUser(e) {
         msg.style.color = "green";
       }
 
-      // redirect based on role
+      // Redirect based on role
       setTimeout(() => {
         if (data.user.role === "HR") {
           window.location.href = "/hr.html";
         } else {
           window.location.href = "/employee.html";
         }
-      }, 1000);
+      }, 1500);
     }
   } catch (err) {
     console.error("Registration error:", err);
@@ -101,7 +130,7 @@ async function registerUser(e) {
 }
 
 async function loginUser(e) {
-  e.preventDefault();
+  e.preventDefault(); // Prevent form submission and page refresh
   console.log("Login function called");
 
   const email = document.getElementById("email")?.value.trim();
@@ -131,14 +160,14 @@ async function loginUser(e) {
         msg.style.color = "green";
       }
 
-      // redirect based on role
+      // Redirect based on role
       setTimeout(() => {
         if (data.user.role === "HR") {
           window.location.href = "/hr.html";
         } else {
           window.location.href = "/employee.html";
         }
-      }, 1000);
+      }, 1500);
     }
   } catch (err) {
     console.error("Login error:", err);
@@ -155,13 +184,28 @@ async function loadDashboard(roleExpected) {
   const status = document.getElementById("status");
   const who = document.getElementById("who");
 
+  // Check if token exists
+  const token = getToken();
+  if (!token) {
+    console.log("No token found, redirecting to login");
+    if (status) {
+      status.textContent = "Please log in first.";
+      status.style.color = "crimson";
+    }
+    setTimeout(() => {
+      window.location.href = "/login.html";
+    }, 1500);
+    return;
+  }
+
   try {
-    const me = await api("/api/me");
+    const me = await api("/api/auth/me");
     console.log("User data:", me);
 
     if (who) who.textContent = `${me.user.name} (${me.user.role})`;
 
     if (me.user.role !== roleExpected) {
+      console.log("Role mismatch:", me.user.role, "expected:", roleExpected);
       if (status) {
         status.textContent = "Access denied: wrong role.";
         status.style.color = "crimson";
@@ -201,6 +245,7 @@ async function loadDashboard(roleExpected) {
 }
 
 function logout() {
+  console.log("Logging out");
   clearToken();
   window.location.href = "/index.html";
 }
@@ -226,7 +271,7 @@ async function loadHRDashboardWidgets() {
     const data = await api("/api/hr/employees");
     console.log("HR employees data:", data);
 
-    // top stats
+    // Top stats
     if (stats) {
       const employees = data.employees || [];
       const total = employees.length;
@@ -254,7 +299,7 @@ async function loadHRDashboardWidgets() {
       `;
     }
 
-    // employee table
+    // Employee table
     if (!tbody) return;
     tbody.innerHTML = "";
 
@@ -349,6 +394,7 @@ async function loadEmployeeDashboardWidgets() {
     let docs = { documents: [] };
     try {
       docs = await api("/api/documents/my");
+      console.log("Documents data:", docs);
     } catch (err) {
       console.error("Error loading docs:", err);
     }
@@ -360,6 +406,7 @@ async function loadEmployeeDashboardWidgets() {
     let equip = { equipment: [] };
     try {
       equip = await api("/api/equipment/my");
+      console.log("Equipment data:", equip);
     } catch (err) {
       console.error("Error loading equipment:", err);
     }
@@ -392,6 +439,7 @@ async function loadEmployeeDashboardWidgets() {
       let trainings = { trainings: [] };
       try {
         trainings = await api("/api/trainings");
+        console.log("Trainings data:", trainings);
       } catch (err) {
         console.error("Error loading trainings:", err);
       }
@@ -424,6 +472,7 @@ async function loadEmployeeDashboardWidgets() {
       let anns = { announcements: [] };
       try {
         anns = await api("/api/announcements");
+        console.log("Announcements data:", anns);
       } catch (err) {
         console.error("Error loading announcements:", err);
       }
@@ -1035,7 +1084,7 @@ async function loadAnnouncementsAndFaqs() {
   }
 }
 
-// make functions globally available
+// Make functions globally available
 window.registerUser = registerUser;
 window.loginUser = loginUser;
 window.logout = logout;

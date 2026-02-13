@@ -2,6 +2,8 @@ const { sql, getPool } = require("../config/dbConfig");
 
 async function getEmployees(req, res) {
   try {
+    console.log("Getting employees list for HR:", req.user.email);
+
     const pool = await getPool();
 
     const result = await pool.request().query(`
@@ -46,6 +48,7 @@ async function getEmployees(req, res) {
 }
 
 async function pingHR(req, res) {
+  console.log("HR ping successful for:", req.user.email);
   res.json({
     success: true,
     message: "HR session active",
@@ -53,6 +56,7 @@ async function pingHR(req, res) {
 }
 
 async function pingEmployee(req, res) {
+  console.log("Employee ping successful for:", req.user.email);
   res.json({
     success: true,
     message: "Employee session active",

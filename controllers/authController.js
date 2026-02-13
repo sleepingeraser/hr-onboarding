@@ -18,7 +18,9 @@ function signToken(user) {
 
 async function register(req, res) {
   try {
-    const { name, email, password, role } = req.body || {};
+    const { name, email, password, role } = req.body;
+
+    console.log("Registration attempt for:", email);
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({
@@ -71,6 +73,7 @@ async function register(req, res) {
       `);
 
     const user = inserted.recordset[0];
+    console.log("User created:", user.Email);
 
     // auto-create checklist for user
     await pool.request().input("UserId", sql.Int, user.UserId).query(`
@@ -116,7 +119,9 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body || {};
+    const { email, password } = req.body;
+
+    console.log("Login attempt for:", email);
 
     if (!email || !password) {
       return res.status(400).json({
@@ -134,6 +139,7 @@ async function login(req, res) {
       );
 
     if (result.recordset.length === 0) {
+      console.log("User not found:", email);
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -144,6 +150,7 @@ async function login(req, res) {
     const ok = await bcrypt.compare(password, user.PasswordHash);
 
     if (!ok) {
+      console.log("Invalid password for:", email);
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -151,6 +158,7 @@ async function login(req, res) {
     }
 
     const token = signToken(user);
+    console.log("Login successful for:", email);
 
     return res.json({
       success: true,
@@ -172,10 +180,19 @@ async function login(req, res) {
 }
 
 async function getMe(req, res) {
-  return res.json({
-    success: true,
-    user: req.user,
-  });
+  try {
+    console.log("GetMe called for user:", req.user.email);
+    return res.json({
+      success: true,
+      user: req.user,
+    });
+  } catch (err) {
+    console.error("GetMe error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
 }
 
 module.exports = {
