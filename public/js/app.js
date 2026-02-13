@@ -738,7 +738,7 @@ async function loadTrainingsPage() {
         </td>
         <td>
           <span style="display: inline-flex; align-items: center; gap: 4px;">
-            <span style="font-size: 16px;">📍</span>
+            <span style="font-size: 16px;"></span>
             ${t.Location || "TBD"}
           </span>
         </td>
