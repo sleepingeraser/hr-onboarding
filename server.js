@@ -32,10 +32,7 @@ const announcementsRoutes = require("./routes/announcementsRoutes");
 const faqsRoutes = require("./routes/faqsRoutes");
 const hrRoutes = require("./routes/hrRoutes");
 
-// frappe api route
-const frappeRoutes = require("./routes/frappeRoutes");
-
-// Use routes
+// use routes
 app.use("/api/auth", authRoutes);
 app.use("/api", checklistRoutes);
 app.use("/api", documentsRoutes);
@@ -44,9 +41,6 @@ app.use("/api", equipmentRoutes);
 app.use("/api", announcementsRoutes);
 app.use("/api", faqsRoutes);
 app.use("/api", hrRoutes);
-
-// frappe routes
-app.use("/api", frappeRoutes);
 
 // serve index.html for any non-API routes
 app.use((req, res, next) => {
