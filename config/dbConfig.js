@@ -17,6 +17,7 @@ const config = {
   },
 };
 
+
 let pool = null;
 
 async function getPool() {

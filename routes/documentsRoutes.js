@@ -11,6 +11,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+
 // configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

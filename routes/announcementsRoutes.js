@@ -10,6 +10,7 @@ function authRequired(req, res, next) {
       .status(401)
       .json({ message: "Missing or invalid Authorization header" });
   }
+  
 
   try {
     const jwt = require("jsonwebtoken");

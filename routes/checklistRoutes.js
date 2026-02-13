@@ -12,6 +12,7 @@ function authRequired(req, res, next) {
       .json({ message: "Missing or invalid Authorization header" });
   }
 
+  
   try {
     const jwt = require("jsonwebtoken");
     const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
