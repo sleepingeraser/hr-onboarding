@@ -6,7 +6,7 @@ class TrainingsModel {
       const response = await frappe.listDocType("Training Event", {
         fields: JSON.stringify([
           "name",
-          "title",
+          "event_name",
           "starts_on",
           "ends_on",
           "location",
@@ -18,7 +18,7 @@ class TrainingsModel {
 
       return response.data.map((training) => ({
         TrainingId: training.name,
-        Title: training.title,
+        Title: training.event_name,
         StartsAt: training.starts_on,
         EndsAt: training.ends_on,
         Location: training.location,
@@ -31,14 +31,21 @@ class TrainingsModel {
   }
 
   async hrCreateTraining({ title, startsAt, endsAt, location, notes }) {
-    return await frappe.createDoc("Training Event", {
-      title,
-      starts_on: startsAt,
-      ends_on: endsAt || startsAt,
-      location,
-      description: notes,
-      training_event_type: "Onboarding",
-    });
+    try {
+      // training Event requires 'event_name'
+      return await frappe.createDoc("Training Event", {
+        event_name: title,
+        title: title,
+        starts_on: startsAt,
+        ends_on: endsAt || startsAt,
+        location,
+        description: notes,
+        training_event_type: "Onboarding",
+      });
+    } catch (error) {
+      console.error("Error creating training:", error);
+      throw error;
+    }
   }
 
   async ensureUserTrainingRows(userId) {
@@ -51,7 +58,7 @@ class TrainingsModel {
       });
 
       for (const training of trainings.data) {
-        // Check if already enrolled
+        // check if already enrolled
         const existing = await frappe.listDocType("Training Event Employee", {
           filters: JSON.stringify([
             ["parent", "=", training.name],
@@ -66,6 +73,7 @@ class TrainingsModel {
             parent: training.name,
             parentfield: "employees",
             parenttype: "Training Event",
+            status: "Open",
           });
         }
       }
@@ -82,7 +90,7 @@ class TrainingsModel {
       const response = await frappe.listDocType("Training Event Employee", {
         fields: JSON.stringify([
           "parent",
-          "parent.title",
+          "parent.event_name",
           "parent.starts_on",
           "parent.location",
           "parent.description",
@@ -94,7 +102,7 @@ class TrainingsModel {
 
       return response.data.map((item) => ({
         TrainingId: item.parent,
-        Title: item.parent_title,
+        Title: item.parent_event_name,
         StartsAt: item.parent_starts_on,
         Location: item.parent_location,
         Notes: item.parent_description,

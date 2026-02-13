@@ -2,13 +2,30 @@ const frappe = require("../services/frappeClient");
 
 class EquipmentModel {
   async createEquipment(itemName, serialNumber, category) {
-    return await frappe.createDoc("Asset", {
-      asset_name: itemName,
-      serial_no: serialNumber,
-      asset_category: category || "IT Equipment",
-      status: "Available",
-      is_active: 1,
-    });
+    try {
+      // first check if Asset Category exists
+      if (category) {
+        try {
+          await frappe.getDoc("Asset Category", category);
+        } catch {
+          // category doesn't exist, create it first
+          await frappe.createDoc("Asset Category", {
+            category_name: category,
+          });
+        }
+      }
+
+      return await frappe.createDoc("Asset", {
+        asset_name: itemName,
+        serial_no: serialNumber,
+        asset_category: category || "IT Equipment",
+        status: "Available",
+        is_active: 1,
+      });
+    } catch (error) {
+      console.error("Error creating equipment:", error);
+      throw error;
+    }
   }
 
   async listEquipment() {
@@ -17,25 +34,41 @@ class EquipmentModel {
         fields: JSON.stringify([
           "name",
           "asset_name",
-          "serial_no",
           "asset_category",
           "status",
           "creation",
         ]),
+        filters: JSON.stringify([["is_active", "=", 1]]),
         order_by: "creation desc",
       });
 
-      return response.data.map((item) => ({
-        EquipmentId: item.name,
-        ItemName: item.asset_name,
-        SerialNumber: item.serial_no,
-        Category: item.asset_category,
-        Status: item.status === "Available" ? "AVAILABLE" : "ASSIGNED",
-        CreatedAt: item.creation,
-      }));
+      // Fetch serial numbers separately
+      const equipmentList = [];
+      for (const item of response.data) {
+        const details = await this.getEquipmentDetails(item.name);
+        equipmentList.push({
+          EquipmentId: item.name,
+          ItemName: item.asset_name,
+          SerialNumber: details?.serial_no || null,
+          Category: item.asset_category,
+          Status: item.status === "Available" ? "AVAILABLE" : "ASSIGNED",
+          CreatedAt: item.creation,
+        });
+      }
+
+      return equipmentList;
     } catch (error) {
       console.error("Error listing equipment:", error);
       return [];
+    }
+  }
+
+  async getEquipmentDetails(equipmentId) {
+    try {
+      const response = await frappe.getDoc("Asset", equipmentId);
+      return response.data;
+    } catch {
+      return null;
     }
   }
 
@@ -55,12 +88,12 @@ class EquipmentModel {
       const employee = await this.getEmployeeByUserId(userId);
       if (!employee) throw new Error("Employee not found");
 
-      // Update asset status
+      // update asset status
       await frappe.updateDoc("Asset", equipmentId, {
         status: "Assigned",
       });
 
-      // Create asset movement
+      // create asset movement
       return await frappe.createDoc("Asset Movement", {
         asset: equipmentId,
         employee: employee.name,
@@ -88,28 +121,46 @@ class EquipmentModel {
           "expected_return_date",
           "actual_return_date",
           "notes",
-          "asset.asset_name",
-          "asset.serial_no",
-          "employee.employee_name",
-          "employee.user_id",
         ]),
         filters: JSON.stringify([["docstatus", "=", 1]]),
         order_by: "movement_date desc",
       });
 
-      return response.data.map((movement) => ({
-        AssignmentId: movement.name,
-        UserId: movement.employee_user_id,
-        Name: movement.employee_employee_name,
-        EquipmentId: movement.asset,
-        ItemName: movement.asset_asset_name,
-        SerialNumber: movement.asset_serial_no,
-        AssignedAt: movement.movement_date,
-        DueBackAt: movement.expected_return_date,
-        ReturnedAt: movement.actual_return_date,
-        EmployeeAck: movement.actual_return_date ? 1 : 0,
-        Notes: movement.notes,
-      }));
+      // fetch additional details separately
+      const assignments = [];
+      for (const movement of response.data) {
+        // get asset details
+        const asset = movement.asset
+          ? await this.getEquipmentDetails(movement.asset)
+          : null;
+
+        // Get employee details
+        let employeeName = "",
+          employeeUserId = "";
+        if (movement.employee) {
+          try {
+            const emp = await frappe.getDoc("Employee", movement.employee);
+            employeeName = emp.data.employee_name;
+            employeeUserId = emp.data.user_id;
+          } catch {}
+        }
+
+        assignments.push({
+          AssignmentId: movement.name,
+          UserId: employeeUserId,
+          Name: employeeName,
+          EquipmentId: movement.asset,
+          ItemName: asset?.asset_name || null,
+          SerialNumber: asset?.serial_no || null,
+          AssignedAt: movement.movement_date,
+          DueBackAt: movement.expected_return_date,
+          ReturnedAt: movement.actual_return_date,
+          EmployeeAck: movement.actual_return_date ? 1 : 0,
+          Notes: movement.notes,
+        });
+      }
+
+      return assignments;
     } catch (error) {
       console.error("Error listing assignments:", error);
       return [];
@@ -130,15 +181,17 @@ class EquipmentModel {
 
   async markReturned(assignmentId, equipmentId) {
     try {
-      // Update asset movement
+      // update asset movement
       await frappe.updateDoc("Asset Movement", assignmentId, {
         actual_return_date: new Date(),
       });
 
-      // Update asset status
-      await frappe.updateDoc("Asset", equipmentId, {
-        status: "Available",
-      });
+      // update asset status
+      if (equipmentId) {
+        await frappe.updateDoc("Asset", equipmentId, {
+          status: "Available",
+        });
+      }
 
       return { message: "Returned" };
     } catch (error) {
@@ -160,9 +213,6 @@ class EquipmentModel {
           "expected_return_date",
           "actual_return_date",
           "notes",
-          "asset.asset_name",
-          "asset.serial_no",
-          "asset.asset_category",
         ]),
         filters: JSON.stringify([
           ["employee", "=", employee.name],
@@ -171,17 +221,26 @@ class EquipmentModel {
         order_by: "movement_date desc",
       });
 
-      return response.data.map((movement) => ({
-        AssignmentId: movement.name,
-        ItemName: movement.asset_asset_name,
-        SerialNumber: movement.asset_serial_no,
-        Category: movement.asset_asset_category,
-        AssignedAt: movement.movement_date,
-        DueBackAt: movement.expected_return_date,
-        ReturnedAt: movement.actual_return_date,
-        EmployeeAck: movement.actual_return_date ? 1 : 0,
-        Notes: movement.notes,
-      }));
+      const equipmentList = [];
+      for (const movement of response.data) {
+        const asset = movement.asset
+          ? await this.getEquipmentDetails(movement.asset)
+          : null;
+
+        equipmentList.push({
+          AssignmentId: movement.name,
+          ItemName: asset?.asset_name || null,
+          SerialNumber: asset?.serial_no || null,
+          Category: asset?.asset_category || null,
+          AssignedAt: movement.movement_date,
+          DueBackAt: movement.expected_return_date,
+          ReturnedAt: movement.actual_return_date,
+          EmployeeAck: movement.actual_return_date ? 1 : 0,
+          Notes: movement.notes,
+        });
+      }
+
+      return equipmentList;
     } catch (error) {
       console.error("Error fetching my equipment:", error);
       return [];
@@ -189,7 +248,6 @@ class EquipmentModel {
   }
 
   async ackEquipment(userId, assignmentId) {
-    // In Frappe, return date serves as acknowledgment
     return await this.markReturned(assignmentId, null);
   }
 

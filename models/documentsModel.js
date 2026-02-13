@@ -9,7 +9,6 @@ class DocumentsModel {
       return await frappe.createDoc("Employee Document", {
         employee: employee.name,
         document_type: docType,
-        file_url: fileUrl,
         file_name: fileName,
         status: "Pending",
       });
@@ -28,7 +27,7 @@ class DocumentsModel {
         fields: JSON.stringify([
           "name",
           "document_type",
-          "file_url",
+          "attach",
           "file_name",
           "status",
           "hr_comment",
@@ -41,9 +40,9 @@ class DocumentsModel {
       return response.data.map((doc) => ({
         DocId: doc.name,
         DocType: doc.document_type,
-        FileUrl: doc.file_url,
+        FileUrl: doc.attach,
         FileName: doc.file_name,
-        Status: doc.status.toUpperCase(),
+        Status: (doc.status || "Pending").toUpperCase(),
         HRComment: doc.hr_comment,
         UploadedAt: doc.creation,
       }));
@@ -59,7 +58,7 @@ class DocumentsModel {
         fields: JSON.stringify([
           "name",
           "document_type",
-          "file_url",
+          "attach",
           "file_name",
           "status",
           "hr_comment",
@@ -75,7 +74,7 @@ class DocumentsModel {
       return response.data.map((doc) => ({
         DocId: doc.name,
         DocType: doc.document_type,
-        FileUrl: doc.file_url,
+        FileUrl: doc.attach,
         FileName: doc.file_name,
         Status: doc.status,
         HRComment: doc.hr_comment,
@@ -92,7 +91,7 @@ class DocumentsModel {
   async reviewDocument(docId, status, comment) {
     try {
       return await frappe.updateDoc("Employee Document", docId, {
-        status: status.toLowerCase(),
+        status: status === "APPROVED" ? "Approved" : "Rejected",
         hr_comment: comment,
       });
     } catch (error) {

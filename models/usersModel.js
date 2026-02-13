@@ -4,22 +4,22 @@ class UsersModel {
   async findByEmail(email) {
     try {
       const response = await frappe.getDoc("User", email.toLowerCase());
+
+      // check if user has HR role
+      const hasHRRole = response.data.roles?.some(
+        (r) =>
+          r.role === "HR Manager" || r.role === "HR User" || r.role === "HR",
+      );
+
       return {
         UserId: response.data.name,
         Name: response.data.full_name || response.data.first_name,
         Email: response.data.email,
-        Role: response.data.roles?.some((r) => r.role === "HR Manager")
-          ? "HR"
-          : "EMPLOYEE",
+        Role: hasHRRole ? "HR" : "EMPLOYEE",
       };
     } catch {
       return null;
     }
-  }
-
-  async createUser({ name, email, passwordHash, role }) {
-    // This is handled in authService.register
-    throw new Error("Use authService.register instead");
   }
 
   async listEmployeesWithStats() {
@@ -41,8 +41,9 @@ class UsersModel {
       const employees = [];
 
       for (const emp of response.data) {
-        // Get checklist stats
+        // get checklist stats
         const checklist = await frappe.listDocType("Employee Checklist", {
+          fields: JSON.stringify(["name", "status"]),
           filters: JSON.stringify([["employee", "=", emp.name]]),
         });
 
@@ -51,8 +52,9 @@ class UsersModel {
           (i) => i.status === "Completed",
         ).length;
 
-        // Get document stats
+        // get document stats
         const docs = await frappe.listDocType("Employee Document", {
+          fields: JSON.stringify(["name", "status"]),
           filters: JSON.stringify([["employee", "=", emp.name]]),
         });
 
@@ -60,8 +62,14 @@ class UsersModel {
           (d) => d.status === "Pending",
         ).length;
 
-        // Get equipment stats
+        // get equipment stats
         const equipment = await frappe.listDocType("Asset Movement", {
+          fields: JSON.stringify([
+            "name",
+            "asset",
+            "movement_date",
+            "actual_return_date",
+          ]),
           filters: JSON.stringify([
             ["employee", "=", emp.name],
             ["docstatus", "=", 1],
@@ -71,21 +79,23 @@ class UsersModel {
 
         const borrowingNow = equipment.data.length;
 
-        // Get latest equipment
-        const latestEq = equipment.data[0] || null;
+        // get latest equipment details
         let lastItemName = null,
           lastSerialNumber = null,
           lastAssignedAt = null,
           lastReturnedAt = null,
           lastEmployeeAck = null;
 
-        if (latestEq) {
-          const asset = await frappe.getDoc("Asset", latestEq.asset);
-          lastItemName = asset.data.asset_name;
-          lastSerialNumber = asset.data.serial_no;
-          lastAssignedAt = latestEq.movement_date;
-          lastReturnedAt = latestEq.actual_return_date;
-          lastEmployeeAck = latestEq.actual_return_date ? 1 : 0;
+        if (equipment.data.length > 0) {
+          const latestEq = equipment.data[0];
+          try {
+            const asset = await frappe.getDoc("Asset", latestEq.asset);
+            lastItemName = asset.data.asset_name;
+            lastSerialNumber = asset.data.serial_no;
+            lastAssignedAt = latestEq.movement_date;
+            lastReturnedAt = latestEq.actual_return_date;
+            lastEmployeeAck = latestEq.actual_return_date ? 1 : 0;
+          } catch {}
         }
 
         employees.push({

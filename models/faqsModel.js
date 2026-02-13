@@ -10,9 +10,10 @@ class FaqsModel {
           "answer",
           "category",
           "creation",
+          "published",
         ]),
         filters: JSON.stringify([["published", "=", 1]]),
-        order_by: "category asc, creation desc",
+        order_by: "creation desc",
       });
 
       return response.data.map((doc) => ({
@@ -20,7 +21,7 @@ class FaqsModel {
         Question: doc.question,
         Answer: doc.answer,
         Category: doc.category || "General",
-        IsActive: 1,
+        IsActive: doc.published ? 1 : 0,
         CreatedAt: doc.creation,
       }));
     } catch (error) {
@@ -39,7 +40,9 @@ class FaqsModel {
   }
 
   async deactivateFaq(id) {
-    return await frappe.updateDoc("FAQ", id, { published: 0 });
+    return await frappe.updateDoc("FAQ", id, {
+      published: 0,
+    });
   }
 
   async listAllFaqs() {
