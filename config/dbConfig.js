@@ -1,23 +1,38 @@
-require("dotenv").config();
 const sql = require("mssql");
 
-const sqlConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+const config = {
+  user: process.env.DB_USER || "sa",
+  password: process.env.DB_PASSWORD || "YourPassword123",
   server: process.env.DB_SERVER || "localhost",
-  database: process.env.DB_DATABASE,
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
+  database: process.env.DB_NAME || "HROnboardingDB",
   options: {
+    encrypt: false,
     trustServerCertificate: true,
-    encrypt: String(process.env.DB_ENCRYPT || "false").toLowerCase() === "true",
     enableArithAbort: true,
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000,
   },
 };
 
-let poolPromise;
+let pool = null;
+
 async function getPool() {
-  if (!poolPromise) poolPromise = sql.connect(sqlConfig);
-  return poolPromise;
+  if (!pool) {
+    try {
+      pool = await sql.connect(config);
+      console.log("MSSQL connection pool created");
+    } catch (err) {
+      console.error("Error creating connection pool:", err);
+      throw err;
+    }
+  }
+  return pool;
 }
 
-module.exports = { sql, sqlConfig, getPool };
+module.exports = {
+  sql,
+  getPool,
+};

@@ -82,31 +82,21 @@
                 width: 100%;
                 border-collapse: separate;
                 border-spacing: 0;
-                min-width: 1280px; /* gives space instead of squeezing */
-                table-layout: fixed; /* respects widths below */
+                min-width: 1280px;
+                table-layout: fixed;
               "
             >
               <colgroup>
                 <col style="width: 220px" />
-                <!-- employee -->
                 <col style="width: 140px" />
-                <!-- joined -->
                 <col style="width: 120px" />
-                <!-- checklist -->
                 <col style="width: 110px" />
-                <!-- pending Docs -->
                 <col style="width: 110px" />
-                <!-- borrowing -->
                 <col style="width: 190px" />
-                <!-- latest equipment -->
                 <col style="width: 150px" />
-                <!-- assigned -->
                 <col style="width: 150px" />
-                <!-- returned -->
                 <col style="width: 80px" />
-                <!-- ack -->
                 <col style="width: 150px" />
-                <!-- actions -->
               </colgroup>
 
               <thead
@@ -203,17 +193,12 @@
               <tbody id="hrEmpTbody"></tbody>
             </table>
           </div>
-
-          <p style="margin-top: 12px; color: var(--muted)">
-            Note: For full equipment history per employee, open “Equipment
-            Assignment”.
-          </p>
         </div>
       </section>
     </main>
 
     <footer class="footer"></footer>
-
+    
     <script src="/js/app.js"></script>
   </body>
 </html>
