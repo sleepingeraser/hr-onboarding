@@ -16,6 +16,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
 app.use(cors());
 app.use(express.json());
 
+
 // serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
