@@ -148,6 +148,94 @@ button.btn {
   margin-top: 12px;
 }
 
+/* add these new button styles */
+.btn-success {
+  border: none;
+  color: white;
+  background: #10b981;
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+.btn-warning {
+  border: none;
+  color: white;
+  background: #f59e0b;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* status badges */
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-upcoming {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.status-attended {
+  background: #d1fae5;
+  color: #10b981;
+}
+
+/* table improvements */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  padding: 12px 8px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 2px solid var(--border);
+}
+
+td {
+  padding: 16px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* hover effect on rows */
+tbody tr:hover {
+  background: rgba(37, 99, 235, 0.02);
+}
+
+/* animation for updates */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
 .hero {
   display: grid;
   gap: 24px;
