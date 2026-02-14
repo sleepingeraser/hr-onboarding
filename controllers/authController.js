@@ -2,6 +2,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const supabase = require("../config/supabaseConfig");
 const { JWT_SECRET } = require("../middleware/auth");
+const { data: existingUser, error: checkError } = await supabase
+  .from("users")
+  .select("user_id")
+  .eq("email", email)
+  .single();
 
 function signToken(user) {
   return jwt.sign(
