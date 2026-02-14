@@ -106,10 +106,16 @@ class TrainingsModel {
     const result = await pool.request().input("UserId", sql.Int, userId).query(`
         SELECT 
           t.*,
-          ut.Attendance
+          ISNULL(ut.Attendance, 'UPCOMING') as Attendance
         FROM ${this.tableName} t
-        INNER JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId
-        WHERE ut.UserId = @UserId
+        LEFT JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId AND ut.UserId = @UserId
+        WHERE ut.UserId = @UserId OR t.TrainingId IN (
+          SELECT TrainingId FROM ${this.tableName}
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ${this.userTableName} 
+            WHERE TrainingId = t.TrainingId AND UserId = @UserId
+          )
+        )
         ORDER BY t.StartsAt ASC
       `);
 
@@ -121,10 +127,18 @@ class TrainingsModel {
     const result = await pool.request().input("UserId", sql.Int, userId).query(`
         SELECT 
           t.*,
-          ut.Attendance
+          ISNULL(ut.Attendance, 'UPCOMING') as Attendance
         FROM ${this.tableName} t
-        INNER JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId
-        WHERE ut.UserId = @UserId AND t.StartsAt > GETDATE() AND ut.Attendance = 'UPCOMING'
+        LEFT JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId AND ut.UserId = @UserId
+        WHERE (ut.UserId = @UserId OR t.TrainingId IN (
+          SELECT TrainingId FROM ${this.tableName}
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ${this.userTableName} 
+            WHERE TrainingId = t.TrainingId AND UserId = @UserId
+          )
+        ))
+        AND t.StartsAt > GETDATE()
+        AND (ut.Attendance IS NULL OR ut.Attendance = 'UPCOMING')
         ORDER BY t.StartsAt ASC
       `);
 
@@ -146,15 +160,30 @@ class TrainingsModel {
 
   static async updateAttendance(userId, trainingId, attendance) {
     const pool = await getPool();
-    await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("TrainingId", sql.Int, trainingId)
-      .input("Attendance", sql.NVarChar(20), attendance).query(`
-        UPDATE ${this.userTableName}
-        SET Attendance = @Attendance
-        WHERE UserId = @UserId AND TrainingId = @TrainingId
-      `);
+
+    // Check if record exists
+    const exists = await this.getUserAttendance(userId, trainingId);
+
+    if (exists) {
+      await pool
+        .request()
+        .input("UserId", sql.Int, userId)
+        .input("TrainingId", sql.Int, trainingId)
+        .input("Attendance", sql.NVarChar(20), attendance).query(`
+          UPDATE ${this.userTableName}
+          SET Attendance = @Attendance
+          WHERE UserId = @UserId AND TrainingId = @TrainingId
+        `);
+    } else {
+      await pool
+        .request()
+        .input("UserId", sql.Int, userId)
+        .input("TrainingId", sql.Int, trainingId)
+        .input("Attendance", sql.NVarChar(20), attendance).query(`
+          INSERT INTO ${this.userTableName} (UserId, TrainingId, Attendance)
+          VALUES (@UserId, @TrainingId, @Attendance)
+        `);
+    }
   }
 
   static async assignToAllEmployees(trainingId) {
@@ -165,7 +194,8 @@ class TrainingsModel {
         FROM Users
         WHERE Role = 'EMPLOYEE'
           AND NOT EXISTS (
-            SELECT 1 FROM ${this.userTableName} ut WHERE ut.UserId=Users.UserId AND ut.TrainingId=@TrainingId
+            SELECT 1 FROM ${this.userTableName} ut 
+            WHERE ut.UserId = Users.UserId AND ut.TrainingId = @TrainingId
           )
       `);
   }

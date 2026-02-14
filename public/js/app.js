@@ -688,29 +688,53 @@ async function loadPendingDocsHR() {
 }
 
 // ---------------- TRAININGS ----------------
+// ... (rest of your app.js code remains the same, but here's the updated training functions)
+
+// ---------------- TRAININGS ----------------
 async function loadTrainingsPage() {
   console.log("Loading trainings page");
 
   const tbody = document.getElementById("trainTbody");
   const msg = document.getElementById("msg");
-  if (msg) msg.textContent = "";
+  if (msg) {
+    msg.textContent = "";
+    msg.style.opacity = "1";
+    msg.style.padding = "";
+    msg.style.backgroundColor = "";
+  }
 
   try {
     const data = await api("/api/trainings");
-    console.log("Trainings data:", data);
+    console.log("Trainings data received:", data);
 
     if (!tbody) return;
 
     tbody.innerHTML = "";
 
-    for (const t of data.trainings) {
+    if (!data.trainings || data.trainings.length === 0) {
       const tr = document.createElement("tr");
-      const dt = new Date(t.StartsAt).toLocaleString();
+      tr.innerHTML = `
+        <td colspan="5" style="text-align: center; padding: 40px; color: var(--muted);">
+          <div style="font-size: 48px; margin-bottom: 16px;">📅</div>
+          <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Trainings Found</div>
+          <div style="font-size: 14px;">Check back later for scheduled training sessions.</div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    for (const t of data.trainings) {
+      console.log("Processing training:", t);
+
+      const tr = document.createElement("tr");
+      const startDate = new Date(t.StartsAt);
+      const now = new Date();
 
       // check if training is in the past
-      const isPast = new Date(t.StartsAt) < new Date();
+      const isPast = startDate < now;
 
-      // determine button style based on status
+      // determine button style and text
       let buttonClass = "btn";
       let buttonText = "";
       let isDisabled = false;
@@ -726,30 +750,42 @@ async function loadTrainingsPage() {
       } else if (t.Attendance === "UPCOMING" && !isPast) {
         buttonClass = "btn-primary";
         buttonText = "Mark Attended";
+      } else {
+        // Default case
+        buttonClass = "btn-primary";
+        buttonText = "Mark Attended";
       }
 
       tr.innerHTML = `
-        <td style="font-weight: 500;">${t.Title}</td>
-        <td>
+        <td style="font-weight: 500; padding: 12px 8px;">${t.Title || "Untitled"}</td>
+        <td style="padding: 12px 8px;">
           <div style="display: flex; flex-direction: column;">
-            <span style="font-weight: 500;">${new Date(t.StartsAt).toLocaleDateString()}</span>
-            <span style="color: var(--muted); font-size: 12px;">${new Date(t.StartsAt).toLocaleTimeString()}</span>
+            <span style="font-weight: 500;">${startDate.toLocaleDateString()}</span>
+            <span style="color: var(--muted); font-size: 12px;">${startDate.toLocaleTimeString()}</span>
           </div>
         </td>
-        <td>
+        <td style="padding: 12px 8px;">
           <span style="display: inline-flex; align-items: center; gap: 4px;">
-            <span style="font-size: 16px;"></span>
             ${t.Location || "TBD"}
           </span>
         </td>
-        <td>
-          <span class="status-badge status-${t.Attendance.toLowerCase()}">
-            ${t.Attendance}
+        <td style="padding: 12px 8px;">
+          <span class="status-badge status-${t.Attendance ? t.Attendance.toLowerCase() : "upcoming"}" 
+                style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; 
+                       ${
+                         t.Attendance === "ATTENDED"
+                           ? "background: #d1fae5; color: #10b981;"
+                           : t.Attendance === "UPCOMING" && isPast
+                             ? "background: #fee2e2; color: #ef4444;"
+                             : "background: #dbeafe; color: #2563eb;"
+                       }">
+            ${t.Attendance || "UPCOMING"}
           </span>
         </td>
-        <td>
+        <td style="padding: 12px 8px;">
           <button class="btn ${buttonClass}" 
                   data-id="${t.TrainingId}"
+                  data-title="${t.Title}"
                   ${isDisabled ? 'disabled style="opacity: 0.6; cursor: not-allowed;"' : ""}>
             ${buttonText}
           </button>
@@ -758,25 +794,35 @@ async function loadTrainingsPage() {
 
       // add event listener only if button is not disabled
       const btn = tr.querySelector("button");
-      if (btn && !isDisabled && t.Attendance === "UPCOMING" && !isPast) {
-        btn.addEventListener("click", async () => {
+      if (btn && !isDisabled && t.Attendance !== "ATTENDED") {
+        btn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          const trainingId = btn.dataset.id;
+          const trainingTitle = btn.dataset.title;
+
           // show confirmation dialog
-          if (confirm(`Mark "${t.Title}" as attended?`)) {
+          if (confirm(`Mark "${trainingTitle}" as attended?`)) {
             try {
               btn.textContent = "Updating...";
               btn.disabled = true;
 
-              await api(`/api/trainings/${t.TrainingId}/attendance`, {
-                method: "PATCH",
-                body: JSON.stringify({ attendance: "ATTENDED" }),
-              });
+              const result = await api(
+                `/api/trainings/${trainingId}/attendance`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify({ attendance: "ATTENDED" }),
+                },
+              );
 
-              // show success message
+              console.log("Attendance update result:", result);
               showTemporaryMessage("Training marked as attended!", "success");
               loadTrainingsPage();
             } catch (err) {
               console.error("Error updating attendance:", err);
-              showTemporaryMessage("Failed to update attendance", "error");
+              showTemporaryMessage(
+                "Failed to update attendance: " + err.message,
+                "error",
+              );
               btn.disabled = false;
               btn.textContent = "Mark Attended";
             }
@@ -786,24 +832,80 @@ async function loadTrainingsPage() {
 
       tbody.appendChild(tr);
     }
-
-    // if no trainings found
-    if (data.trainings.length === 0) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td colspan="5" style="text-align: center; padding: 40px; color: var(--muted);">
-          <div style="font-size: 48px; margin-bottom: 16px;">📅</div>
-          <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Trainings Found</div>
-          <div style="font-size: 14px;">Check back later for scheduled training sessions.</div>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    }
   } catch (err) {
     console.error("Error loading trainings:", err);
     if (msg) {
-      msg.textContent = err.message;
+      msg.textContent = err.message || "Failed to load trainings";
       msg.style.color = "crimson";
+    }
+  }
+}
+
+// ---------------- CREATE TRAINING (HR) ----------------
+async function createTraining(e) {
+  e.preventDefault();
+  console.log("Create training function called");
+
+  const msg = document.getElementById("msg");
+  if (msg) {
+    msg.textContent = "Creating training...";
+    msg.style.color = "blue";
+    msg.style.opacity = "1";
+    msg.style.padding = "10px";
+    msg.style.backgroundColor = "#dbeafe";
+  }
+
+  const title = document.getElementById("tTitle")?.value.trim();
+  const startsAt = document.getElementById("tStartsAt")?.value;
+  const location = document.getElementById("tLocation")?.value.trim();
+  const notes = document.getElementById("tNotes")?.value.trim();
+
+  console.log("Training form data:", { title, startsAt, location, notes });
+
+  if (!title || !startsAt) {
+    if (msg) {
+      msg.textContent = "Title and start time are required";
+      msg.style.color = "crimson";
+      msg.style.backgroundColor = "#fee2e2";
+    }
+    return;
+  }
+
+  try {
+    const data = await api("/api/hr/trainings", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        startsAt: new Date(startsAt).toISOString(),
+        location,
+        notes,
+      }),
+    });
+
+    console.log("Training created successfully:", data);
+
+    if (msg) {
+      msg.textContent = "Training created successfully!";
+      msg.style.color = "green";
+      msg.style.backgroundColor = "#d1fae5";
+    }
+
+    // Clear the form
+    document.getElementById("tTitle").value = "";
+    document.getElementById("tStartsAt").value = "";
+    document.getElementById("tLocation").value = "";
+    document.getElementById("tNotes").value = "";
+
+    // Show success message and redirect
+    setTimeout(() => {
+      window.location.href = "/hr.html";
+    }, 2000);
+  } catch (err) {
+    console.error("Error creating training:", err);
+    if (msg) {
+      msg.textContent = err.message || "Failed to create training";
+      msg.style.color = "crimson";
+      msg.style.backgroundColor = "#fee2e2";
     }
   }
 }
@@ -1032,6 +1134,7 @@ async function createEquipment(e) {
     }
   }
 }
+
 
 async function assignEquipment(e) {
   e.preventDefault();
