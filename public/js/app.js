@@ -1135,7 +1135,6 @@ async function createEquipment(e) {
   }
 }
 
-
 async function assignEquipment(e) {
   e.preventDefault();
   console.log("Assign equipment function called");
