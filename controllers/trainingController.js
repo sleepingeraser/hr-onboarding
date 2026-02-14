@@ -27,12 +27,12 @@ async function getTrainings(req, res) {
     });
 
     // combine the data
-    const trainings = allTrainings.map((training) => ({
+    const trainings = (allTrainings || []).map((training) => ({
       TrainingId: training.training_id,
-      Title: training.title,
+      Title: training.title || "",
       StartsAt: training.starts_at,
-      Location: training.location,
-      Notes: training.notes,
+      Location: training.location || "",
+      Notes: training.notes || "",
       Attendance: attendanceMap[training.training_id] || "UPCOMING",
     }));
 
@@ -148,7 +148,10 @@ async function createTraining(req, res) {
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error("Insert error:", insertError);
+      throw insertError;
+    }
 
     const trainingId = training.training_id;
     console.log("Training created with ID:", trainingId);
@@ -161,9 +164,11 @@ async function createTraining(req, res) {
 
     if (employeesError) throw employeesError;
 
-    console.log(`Found ${employees.length} employees to assign training to`);
+    console.log(
+      `Found ${employees?.length || 0} employees to assign training to`,
+    );
 
-    if (employees.length > 0) {
+    if (employees && employees.length > 0) {
       // prepare assignments for all employees
       const assignments = employees.map((emp) => ({
         user_id: emp.user_id,
@@ -176,9 +181,12 @@ async function createTraining(req, res) {
         .from("user_training")
         .insert(assignments);
 
-      if (assignError) throw assignError;
-
-      console.log(`Assigned training to ${employees.length} employees`);
+      if (assignError) {
+        console.error("Assign error:", assignError);
+        // training was created successfully
+      } else {
+        console.log(`Assigned training to ${employees.length} employees`);
+      }
     }
 
     res.status(201).json({

@@ -19,9 +19,19 @@ async function getAnnouncements(req, res) {
 
     if (error) throw error;
 
+    // transform data to match frontend expectations
+    const formattedAnnouncements = (announcements || []).map((a) => ({
+      AnnouncementId: a.announcement_id,
+      Title: a.title || "",
+      Body: a.body || "",
+      Audience: a.audience || "ALL",
+      CreatedAt: a.created_at,
+      CreatedByUserId: a.created_by_user_id,
+    }));
+
     res.json({
       success: true,
-      announcements: announcements || [],
+      announcements: formattedAnnouncements,
     });
   } catch (err) {
     console.error("GET announcements error:", err);
@@ -35,6 +45,8 @@ async function getAnnouncements(req, res) {
 async function createAnnouncement(req, res) {
   try {
     const { title, body, audience } = req.body;
+
+    console.log("Creating announcement with data:", { title, body, audience });
 
     if (!title || !body || !audience) {
       return res.status(400).json({
@@ -50,26 +62,42 @@ async function createAnnouncement(req, res) {
       });
     }
 
-    const { error } = await supabase.from("announcements").insert([
-      {
-        title: title,
-        body: body,
-        audience: audience,
-        created_by_user_id: req.user.userId,
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("announcements")
+      .insert([
+        {
+          title: title,
+          body: body,
+          audience: audience,
+          created_by_user_id: req.user.userId,
+        },
+      ])
+      .select()
+      .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Insert error:", error);
+      throw error;
+    }
+
+    console.log("Announcement created successfully:", data);
 
     res.status(201).json({
       success: true,
-      message: "Announcement created",
+      message: "Announcement created successfully",
+      announcement: {
+        AnnouncementId: data.announcement_id,
+        Title: data.title,
+        Body: data.body,
+        Audience: data.audience,
+        CreatedAt: data.created_at,
+      },
     });
   } catch (err) {
     console.error("POST announcement error:", err);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Server error: " + err.message,
     });
   }
 }

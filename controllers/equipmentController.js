@@ -26,16 +26,16 @@ async function getMyEquipment(req, res) {
     if (error) throw error;
 
     // transform data
-    const formattedEquipment = equipment.map((item) => ({
+    const formattedEquipment = (equipment || []).map((item) => ({
       AssignmentId: item.assignment_id,
       EquipmentId: item.equipment.equipment_id,
-      ItemName: item.equipment.item_name,
-      SerialNumber: item.equipment.serial_number,
-      Category: item.equipment.category,
+      ItemName: item.equipment.item_name || "",
+      SerialNumber: item.equipment.serial_number || "",
+      Category: item.equipment.category || "",
       AssignedAt: item.assigned_at,
       DueBackAt: item.due_back_at,
-      Notes: item.notes,
-      EmployeeAck: item.employee_ack,
+      Notes: item.notes || "",
+      EmployeeAck: item.employee_ack || false,
       ReturnedAt: item.returned_at,
     }));
 
@@ -87,9 +87,19 @@ async function getAllEquipment(req, res) {
 
     if (error) throw error;
 
+    // transform data to match frontend expectations
+    const formattedEquipment = (equipment || []).map((e) => ({
+      EquipmentId: e.equipment_id,
+      ItemName: e.item_name || "",
+      SerialNumber: e.serial_number || "",
+      Category: e.category || "",
+      Status: e.status || "AVAILABLE",
+      CreatedAt: e.created_at,
+    }));
+
     res.json({
       success: true,
-      equipment: equipment || [],
+      equipment: formattedEquipment,
     });
   } catch (err) {
     console.error("GET equipment error:", err);
@@ -127,16 +137,16 @@ async function getAssignments(req, res) {
     if (error) throw error;
 
     // transform data
-    const formattedAssignments = assignments.map((a) => ({
+    const formattedAssignments = (assignments || []).map((a) => ({
       AssignmentId: a.assignment_id,
-      Name: a.users.name,
-      Email: a.users.email,
-      ItemName: a.equipment.item_name,
-      SerialNumber: a.equipment.serial_number,
+      Name: a.users.name || "",
+      Email: a.users.email || "",
+      ItemName: a.equipment.item_name || "",
+      SerialNumber: a.equipment.serial_number || "",
       AssignedAt: a.assigned_at,
       DueBackAt: a.due_back_at,
-      Notes: a.notes,
-      EmployeeAck: a.employee_ack,
+      Notes: a.notes || "",
+      EmployeeAck: a.employee_ack || false,
       ReturnedAt: a.returned_at,
     }));
 
@@ -157,6 +167,12 @@ async function createEquipment(req, res) {
   try {
     const { itemName, serialNumber, category } = req.body;
 
+    console.log("Creating equipment with data:", {
+      itemName,
+      serialNumber,
+      category,
+    });
+
     if (!itemName) {
       return res.status(400).json({
         success: false,
@@ -164,26 +180,42 @@ async function createEquipment(req, res) {
       });
     }
 
-    const { error } = await supabase.from("equipment").insert([
-      {
-        item_name: itemName,
-        serial_number: serialNumber || null,
-        category: category || null,
-        status: "AVAILABLE",
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("equipment")
+      .insert([
+        {
+          item_name: itemName,
+          serial_number: serialNumber || null,
+          category: category || null,
+          status: "AVAILABLE",
+        },
+      ])
+      .select()
+      .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Insert error:", error);
+      throw error;
+    }
+
+    console.log("Equipment created successfully:", data);
 
     res.status(201).json({
       success: true,
-      message: "Equipment added",
+      message: "Equipment added successfully",
+      equipment: {
+        EquipmentId: data.equipment_id,
+        ItemName: data.item_name,
+        SerialNumber: data.serial_number,
+        Category: data.category,
+        Status: data.status,
+      },
     });
   } catch (err) {
     console.error("POST equipment error:", err);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Server error: " + err.message,
     });
   }
 }
@@ -191,6 +223,13 @@ async function createEquipment(req, res) {
 async function assignEquipment(req, res) {
   try {
     const { userId, equipmentId, dueBackAt, notes } = req.body;
+
+    console.log("Assigning equipment with data:", {
+      userId,
+      equipmentId,
+      dueBackAt,
+      notes,
+    });
 
     if (!userId || !equipmentId) {
       return res.status(400).json({
@@ -206,17 +245,27 @@ async function assignEquipment(req, res) {
       .eq("equipment_id", equipmentId)
       .single();
 
-    if (checkError) throw checkError;
+    if (checkError) {
+      console.error("Check error:", checkError);
+      throw checkError;
+    }
+
+    if (!equipment) {
+      return res.status(404).json({
+        success: false,
+        message: "Equipment not found",
+      });
+    }
 
     if (equipment.status !== "AVAILABLE") {
       return res.status(400).json({
         success: false,
-        message: "Equipment not available",
+        message: "Equipment not available. Current status: " + equipment.status,
       });
     }
 
     // create assignment
-    const { error: assignError } = await supabase
+    const { data: assignment, error: assignError } = await supabase
       .from("user_equipment")
       .insert([
         {
@@ -226,9 +275,14 @@ async function assignEquipment(req, res) {
           notes: notes || null,
           employee_ack: false,
         },
-      ]);
+      ])
+      .select()
+      .single();
 
-    if (assignError) throw assignError;
+    if (assignError) {
+      console.error("Assign error:", assignError);
+      throw assignError;
+    }
 
     // update equipment status
     const { error: updateError } = await supabase
@@ -236,17 +290,27 @@ async function assignEquipment(req, res) {
       .update({ status: "ASSIGNED" })
       .eq("equipment_id", equipmentId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error("Update error:", updateError);
+      throw updateError;
+    }
+
+    console.log("Equipment assigned successfully:", assignment);
 
     res.status(201).json({
       success: true,
-      message: "Equipment assigned",
+      message: "Equipment assigned successfully",
+      assignment: {
+        AssignmentId: assignment.assignment_id,
+        UserId: assignment.user_id,
+        EquipmentId: assignment.equipment_id,
+      },
     });
   } catch (err) {
     console.error("POST assign error:", err);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Server error: " + err.message,
     });
   }
 }

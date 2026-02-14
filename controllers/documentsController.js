@@ -12,9 +12,19 @@ async function getMyDocuments(req, res) {
 
     if (error) throw error;
 
+    // transform data to match frontend expectations
+    const formattedDocs = (documents || []).map((doc) => ({
+      DocId: doc.doc_id,
+      DocType: doc.doc_type || "",
+      FileUrl: doc.file_url || "",
+      Status: doc.status || "PENDING",
+      HRComment: doc.hr_comment || "",
+      UploadedAt: doc.uploaded_at,
+    }));
+
     res.json({
       success: true,
-      documents: documents || [],
+      documents: formattedDocs,
     });
   } catch (err) {
     console.error("GET my documents error:", err);
@@ -35,6 +45,8 @@ async function uploadDocument(req, res) {
     }
 
     const { docType } = req.body;
+    console.log("Uploading document with type:", docType);
+
     if (!docType) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({
@@ -45,20 +57,36 @@ async function uploadDocument(req, res) {
 
     const fileUrl = `/uploads/${req.file.filename}`;
 
-    const { error } = await supabase.from("documents").insert([
-      {
-        user_id: req.user.userId,
-        doc_type: docType,
-        file_url: fileUrl,
-        status: "PENDING",
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("documents")
+      .insert([
+        {
+          user_id: req.user.userId,
+          doc_type: docType,
+          file_url: fileUrl,
+          status: "PENDING",
+        },
+      ])
+      .select()
+      .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Insert error:", error);
+      fs.unlinkSync(req.file.path);
+      throw error;
+    }
+
+    console.log("Document uploaded successfully:", data);
 
     res.status(201).json({
       success: true,
       message: "Document uploaded successfully",
+      document: {
+        DocId: data.doc_id,
+        DocType: data.doc_type,
+        FileUrl: data.file_url,
+        Status: data.status,
+      },
     });
   } catch (err) {
     console.error("Upload document error:", err);
@@ -69,7 +97,7 @@ async function uploadDocument(req, res) {
     }
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Server error: " + err.message,
     });
   }
 }
@@ -99,16 +127,16 @@ async function getPendingDocuments(req, res) {
     if (error) throw error;
 
     // transform data to match expected format
-    const formattedDocs = documents.map((doc) => ({
+    const formattedDocs = (documents || []).map((doc) => ({
       DocId: doc.doc_id,
-      DocType: doc.doc_type,
-      FileUrl: doc.file_url,
-      Status: doc.status,
-      HRComment: doc.hr_comment,
+      DocType: doc.doc_type || "",
+      FileUrl: doc.file_url || "",
+      Status: doc.status || "",
+      HRComment: doc.hr_comment || "",
       UploadedAt: doc.uploaded_at,
       UserId: doc.users.user_id,
-      Name: doc.users.name,
-      Email: doc.users.email,
+      Name: doc.users.name || "",
+      Email: doc.users.email || "",
     }));
 
     res.json({
