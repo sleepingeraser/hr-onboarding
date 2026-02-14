@@ -1,142 +1,136 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class FAQsModel {
-  static tableName = "FAQs";
+  static tableName = "faqs";
 
   static async findAll() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      WHERE IsActive = 1 
-      ORDER BY Category, CreatedAt DESC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("is_active", true)
+      .order("category", { ascending: true })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findById(faqId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("FaqId", sql.Int, faqId)
-      .query(`SELECT * FROM ${this.tableName} WHERE FaqId = @FaqId`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("faq_id", faqId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findByCategory(category) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Category", sql.NVarChar(80), category).query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE Category = @Category AND IsActive = 1 
-        ORDER BY CreatedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("category", category)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async findActive() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      WHERE IsActive = 1 
-      ORDER BY Category, CreatedAt DESC
-    `);
-    return result.recordset;
+    return await this.findAll();
   }
 
   static async create(faqData) {
     const { question, answer, category } = faqData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Question", sql.NVarChar(200), question)
-      .input("Answer", sql.NVarChar(sql.MAX), answer)
-      .input("Category", sql.NVarChar(80), category || null)
-      .input("IsActive", sql.Bit, 1)
-      .input("CreatedAt", sql.DateTime2, new Date()).query(`
-        INSERT INTO ${this.tableName} (Question, Answer, Category, IsActive, CreatedAt)
-        OUTPUT INSERTED.*
-        VALUES (@Question, @Answer, @Category, @IsActive, @CreatedAt)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          question,
+          answer,
+          category: category || null,
+          is_active: true,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async update(faqId, faqData) {
-    const pool = await getPool();
-    const request = pool.request().input("FaqId", sql.Int, faqId);
+    const updates = {};
+    if (faqData.question !== undefined) updates.question = faqData.question;
+    if (faqData.answer !== undefined) updates.answer = faqData.answer;
+    if (faqData.category !== undefined) updates.category = faqData.category;
+    if (faqData.isActive !== undefined) updates.is_active = faqData.isActive;
 
-    const updates = [];
-    if (faqData.question !== undefined) {
-      request.input("Question", sql.NVarChar(200), faqData.question);
-      updates.push("Question = @Question");
-    }
-    if (faqData.answer !== undefined) {
-      request.input("Answer", sql.NVarChar(sql.MAX), faqData.answer);
-      updates.push("Answer = @Answer");
-    }
-    if (faqData.category !== undefined) {
-      request.input("Category", sql.NVarChar(80), faqData.category);
-      updates.push("Category = @Category");
-    }
-    if (faqData.isActive !== undefined) {
-      request.input("IsActive", sql.Bit, faqData.isActive);
-      updates.push("IsActive = @IsActive");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("faq_id", faqId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE FaqId = @FaqId`;
-    await request.query(query);
-
-    return await this.findById(faqId);
+    if (error) throw error;
+    return data;
   }
 
   static async delete(faqId) {
-    // Soft delete - just mark as inactive
-    return await this.update(faqId, { isActive: 0 });
+    // Soft delete - mark as inactive
+    return await this.update(faqId, { isActive: false });
   }
 
   static async permanentlyDelete(faqId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("FaqId", sql.Int, faqId)
-      .query(`DELETE FROM ${this.tableName} WHERE FaqId = @FaqId`);
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("faq_id", faqId);
+
+    if (error) throw error;
+    return true;
   }
 
   static async count() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT COUNT(*) as count FROM ${this.tableName} WHERE IsActive = 1
-    `);
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true);
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countByCategory(category) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Category", sql.NVarChar(80), category).query(`
-        SELECT COUNT(*) as count FROM ${this.tableName} 
-        WHERE Category = @Category AND IsActive = 1
-      `);
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("category", category)
+      .eq("is_active", true);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   static async getCategories() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT DISTINCT Category FROM ${this.tableName} 
-      WHERE IsActive = 1 AND Category IS NOT NULL 
-      ORDER BY Category
-    `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("category")
+      .eq("is_active", true)
+      .not("category", "is", null)
+      .order("category", { ascending: true });
 
-    return result.recordset.map((r) => r.Category);
+    if (error) throw error;
+
+    // get unique categories
+    const categories = [...new Set(data?.map((item) => item.category) || [])];
+    return categories;
   }
 }
 

@@ -1,105 +1,95 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class EquipmentModel {
-  static tableName = "Equipment";
-  static assignmentTableName = "UserEquipment";
+  static tableName = "equipment";
+  static assignmentTableName = "user_equipment";
 
   // equipment methods
   static async findAll() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      ORDER BY CreatedAt DESC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findById(equipmentId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("EquipmentId", sql.Int, equipmentId)
-      .query(
-        `SELECT * FROM ${this.tableName} WHERE EquipmentId = @EquipmentId`,
-      );
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("equipment_id", equipmentId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findAvailable() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      WHERE Status = 'AVAILABLE' 
-      ORDER BY CreatedAt DESC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("status", "AVAILABLE")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findByStatus(status) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Status", sql.NVarChar(20), status).query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE Status = @Status 
-        ORDER BY CreatedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("status", status)
+      .order("created_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async create(equipmentData) {
     const { itemName, serialNumber, category } = equipmentData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("ItemName", sql.NVarChar(120), itemName)
-      .input("SerialNumber", sql.NVarChar(120), serialNumber || null)
-      .input("Category", sql.NVarChar(50), category || null)
-      .input("Status", sql.NVarChar(20), "AVAILABLE")
-      .input("CreatedAt", sql.DateTime2, new Date()).query(`
-        INSERT INTO ${this.tableName} (ItemName, SerialNumber, Category, Status, CreatedAt)
-        OUTPUT INSERTED.*
-        VALUES (@ItemName, @SerialNumber, @Category, @Status, @CreatedAt)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          item_name: itemName,
+          serial_number: serialNumber || null,
+          category: category || null,
+          status: "AVAILABLE",
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async update(equipmentId, equipmentData) {
-    const pool = await getPool();
-    const request = pool.request().input("EquipmentId", sql.Int, equipmentId);
+    const updates = {};
+    if (equipmentData.itemName !== undefined)
+      updates.item_name = equipmentData.itemName;
+    if (equipmentData.serialNumber !== undefined)
+      updates.serial_number = equipmentData.serialNumber;
+    if (equipmentData.category !== undefined)
+      updates.category = equipmentData.category;
+    if (equipmentData.status !== undefined)
+      updates.status = equipmentData.status;
 
-    const updates = [];
-    if (equipmentData.itemName !== undefined) {
-      request.input("ItemName", sql.NVarChar(120), equipmentData.itemName);
-      updates.push("ItemName = @ItemName");
-    }
-    if (equipmentData.serialNumber !== undefined) {
-      request.input(
-        "SerialNumber",
-        sql.NVarChar(120),
-        equipmentData.serialNumber,
-      );
-      updates.push("SerialNumber = @SerialNumber");
-    }
-    if (equipmentData.category !== undefined) {
-      request.input("Category", sql.NVarChar(50), equipmentData.category);
-      updates.push("Category = @Category");
-    }
-    if (equipmentData.status !== undefined) {
-      request.input("Status", sql.NVarChar(20), equipmentData.status);
-      updates.push("Status = @Status");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("equipment_id", equipmentId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE EquipmentId = @EquipmentId`;
-    await request.query(query);
-
-    return await this.findById(equipmentId);
+    if (error) throw error;
+    return data;
   }
 
   static async updateStatus(equipmentId, status) {
@@ -107,188 +97,216 @@ class EquipmentModel {
   }
 
   static async delete(equipmentId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("EquipmentId", sql.Int, equipmentId)
-      .query(`DELETE FROM ${this.tableName} WHERE EquipmentId = @EquipmentId`);
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("equipment_id", equipmentId);
+
+    if (error) throw error;
+    return true;
   }
 
   static async count() {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName}`,
-    );
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true });
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countByStatus(status) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Status", sql.NVarChar(20), status)
-      .query(
-        `SELECT COUNT(*) as count FROM ${this.tableName} WHERE Status = @Status`,
-      );
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("status", status);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   // assignment methods
   static async getAssignments() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT 
-        ue.AssignmentId,
-        u.Name,
-        u.Email,
-        e.ItemName,
-        e.SerialNumber,
-        ue.AssignedAt,
-        ue.DueBackAt,
-        ue.Notes,
-        ue.EmployeeAck,
-        ue.ReturnedAt
-      FROM ${this.assignmentTableName} ue
-      INNER JOIN Users u ON ue.UserId = u.UserId
-      INNER JOIN ${this.tableName} e ON ue.EquipmentId = e.EquipmentId
-      ORDER BY ue.AssignedAt DESC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.assignmentTableName)
+      .select(
+        `
+        assignment_id,
+        assigned_at,
+        due_back_at,
+        notes,
+        employee_ack,
+        returned_at,
+        users!inner (
+          name,
+          email
+        ),
+        equipment!inner (
+          item_name,
+          serial_number
+        )
+      `,
+      )
+      .order("assigned_at", { ascending: false });
+
+    if (error) throw error;
+
+    // transform data
+    return (data || []).map((a) => ({
+      AssignmentId: a.assignment_id,
+      Name: a.users.name,
+      Email: a.users.email,
+      ItemName: a.equipment.item_name,
+      SerialNumber: a.equipment.serial_number,
+      AssignedAt: a.assigned_at,
+      DueBackAt: a.due_back_at,
+      Notes: a.notes,
+      EmployeeAck: a.employee_ack,
+      ReturnedAt: a.returned_at,
+    }));
   }
 
   static async getUserEquipment(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          ue.AssignmentId,
-          e.*,
-          ue.AssignedAt,
-          ue.DueBackAt,
-          ue.Notes,
-          ue.EmployeeAck,
-          ue.ReturnedAt
-        FROM ${this.assignmentTableName} ue
-        INNER JOIN ${this.tableName} e ON ue.EquipmentId = e.EquipmentId
-        WHERE ue.UserId = @UserId
-        ORDER BY ue.AssignedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.assignmentTableName)
+      .select(
+        `
+        assignment_id,
+        assigned_at,
+        due_back_at,
+        notes,
+        employee_ack,
+        returned_at,
+        equipment!inner (
+          equipment_id,
+          item_name,
+          serial_number,
+          category
+        )
+      `,
+      )
+      .eq("user_id", userId)
+      .order("assigned_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+
+    // transform data
+    return (data || []).map((item) => ({
+      AssignmentId: item.assignment_id,
+      EquipmentId: item.equipment.equipment_id,
+      ItemName: item.equipment.item_name,
+      SerialNumber: item.equipment.serial_number,
+      Category: item.equipment.category,
+      AssignedAt: item.assigned_at,
+      DueBackAt: item.due_back_at,
+      Notes: item.notes,
+      EmployeeAck: item.employee_ack,
+      ReturnedAt: item.returned_at,
+    }));
   }
 
   static async getCurrentUserEquipment(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          ue.AssignmentId,
-          e.*,
-          ue.AssignedAt,
-          ue.DueBackAt,
-          ue.Notes,
-          ue.EmployeeAck
-        FROM ${this.assignmentTableName} ue
-        INNER JOIN ${this.tableName} e ON ue.EquipmentId = e.EquipmentId
-        WHERE ue.UserId = @UserId AND ue.ReturnedAt IS NULL
-        ORDER BY ue.AssignedAt DESC
-      `);
-
-    return result.recordset;
+    const equipment = await this.getUserEquipment(userId);
+    return equipment.filter((e) => !e.ReturnedAt);
   }
 
   static async getAssignmentById(assignmentId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("AssignmentId", sql.Int, assignmentId)
-      .query(
-        `SELECT * FROM ${this.assignmentTableName} WHERE AssignmentId = @AssignmentId`,
-      );
+    const { data, error } = await supabase
+      .from(this.assignmentTableName)
+      .select("*")
+      .eq("assignment_id", assignmentId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async assign(assignmentData) {
     const { userId, equipmentId, dueBackAt, notes } = assignmentData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("EquipmentId", sql.Int, equipmentId)
-      .input("DueBackAt", sql.DateTime2, dueBackAt ? new Date(dueBackAt) : null)
-      .input("Notes", sql.NVarChar(250), notes || null)
-      .input("AssignedAt", sql.DateTime2, new Date())
-      .input("EmployeeAck", sql.Bit, 0).query(`
-        INSERT INTO ${this.assignmentTableName} (UserId, EquipmentId, AssignedAt, DueBackAt, Notes, EmployeeAck)
-        OUTPUT INSERTED.*
-        VALUES (@UserId, @EquipmentId, @AssignedAt, @DueBackAt, @Notes, @EmployeeAck)
-      `);
+    const { data, error } = await supabase
+      .from(this.assignmentTableName)
+      .insert([
+        {
+          user_id: userId,
+          equipment_id: equipmentId,
+          due_back_at: dueBackAt ? new Date(dueBackAt).toISOString() : null,
+          notes: notes || null,
+          employee_ack: false,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+
+    // update equipment status
+    await this.updateStatus(equipmentId, "ASSIGNED");
+
+    return data;
   }
 
   static async acknowledge(assignmentId, userId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("AssignmentId", sql.Int, assignmentId)
-      .input("UserId", sql.Int, userId).query(`
-        UPDATE ${this.assignmentTableName}
-        SET EmployeeAck = 1
-        WHERE AssignmentId = @AssignmentId AND UserId = @UserId AND ReturnedAt IS NULL
-      `);
+    const { error } = await supabase
+      .from(this.assignmentTableName)
+      .update({ employee_ack: true })
+      .eq("assignment_id", assignmentId)
+      .eq("user_id", userId)
+      .is("returned_at", null);
+
+    if (error) throw error;
   }
 
   static async markReturned(assignmentId) {
-    const pool = await getPool();
-
-    // get the equipment ID first
+    // get the assignment first
     const assignment = await this.getAssignmentById(assignmentId);
     if (!assignment) return null;
 
     // mark as returned
-    await pool
-      .request()
-      .input("AssignmentId", sql.Int, assignmentId)
-      .input("ReturnedAt", sql.DateTime2, new Date()).query(`
-        UPDATE ${this.assignmentTableName}
-        SET ReturnedAt = @ReturnedAt
-        WHERE AssignmentId = @AssignmentId
-      `);
+    const { error: updateError } = await supabase
+      .from(this.assignmentTableName)
+      .update({ returned_at: new Date().toISOString() })
+      .eq("assignment_id", assignmentId);
+
+    if (updateError) throw updateError;
 
     // update equipment status
-    await this.updateStatus(assignment.EquipmentId, "AVAILABLE");
+    await this.updateStatus(assignment.equipment_id, "AVAILABLE");
 
     return assignment;
   }
 
   static async countActiveAssignments() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT COUNT(*) as count FROM ${this.assignmentTableName} WHERE ReturnedAt IS NULL
-    `);
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.assignmentTableName)
+      .select("*", { count: "exact", head: true })
+      .is("returned_at", null);
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countUserActiveAssignments(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT COUNT(*) as count FROM ${this.assignmentTableName} 
-        WHERE UserId = @UserId AND ReturnedAt IS NULL
-      `);
+    const { count, error } = await supabase
+      .from(this.assignmentTableName)
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("returned_at", null);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countUnacknowledged(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT COUNT(*) as count FROM ${this.assignmentTableName} 
-        WHERE UserId = @UserId AND ReturnedAt IS NULL AND EmployeeAck = 0
-      `);
+    const { count, error } = await supabase
+      .from(this.assignmentTableName)
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("returned_at", null)
+      .eq("employee_ack", false);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 }
 

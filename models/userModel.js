@@ -1,44 +1,44 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class UserModel {
-  static tableName = "Users";
+  static tableName = "users";
 
   static async findById(userId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .query(`SELECT * FROM ${this.tableName} WHERE UserId = @UserId`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("user_id", userId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findByEmail(email) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Email", sql.NVarChar(200), email)
-      .query(`SELECT * FROM ${this.tableName} WHERE Email = @Email`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findAll(role = null) {
-    const pool = await getPool();
-    let query = `SELECT * FROM ${this.tableName}`;
+    let query = supabase
+      .from(this.tableName)
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (role) {
-      query += ` WHERE Role = @Role`;
-    }
-    query += ` ORDER BY CreatedAt DESC`;
-
-    const request = pool.request();
-    if (role) {
-      request.input("Role", sql.NVarChar(20), role);
+      query = query.eq("role", role);
     }
 
-    const result = await request.query(query);
-    return result.recordset;
+    const { data, error } = await query;
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findAllEmployees() {
@@ -52,110 +52,148 @@ class UserModel {
   static async create(userData) {
     const { name, email, passwordHash, role } = userData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Name", sql.NVarChar(120), name)
-      .input("Email", sql.NVarChar(200), email)
-      .input("PasswordHash", sql.NVarChar(200), passwordHash)
-      .input("Role", sql.NVarChar(20), role).query(`
-        INSERT INTO ${this.tableName} (Name, Email, PasswordHash, Role)
-        OUTPUT INSERTED.*
-        VALUES (@Name, @Email, @PasswordHash, @Role)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          name,
+          email,
+          password_hash: passwordHash,
+          role,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async update(userId, userData) {
-    const pool = await getPool();
-    const request = pool.request().input("UserId", sql.Int, userId);
+    const updates = {};
+    if (userData.name !== undefined) updates.name = userData.name;
+    if (userData.email !== undefined) updates.email = userData.email;
+    if (userData.passwordHash !== undefined)
+      updates.password_hash = userData.passwordHash;
+    if (userData.role !== undefined) updates.role = userData.role;
 
-    const updates = [];
-    if (userData.name !== undefined) {
-      request.input("Name", sql.NVarChar(120), userData.name);
-      updates.push("Name = @Name");
-    }
-    if (userData.email !== undefined) {
-      request.input("Email", sql.NVarChar(200), userData.email);
-      updates.push("Email = @Email");
-    }
-    if (userData.passwordHash !== undefined) {
-      request.input("PasswordHash", sql.NVarChar(200), userData.passwordHash);
-      updates.push("PasswordHash = @PasswordHash");
-    }
-    if (userData.role !== undefined) {
-      request.input("Role", sql.NVarChar(20), userData.role);
-      updates.push("Role = @Role");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("user_id", userId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE UserId = @UserId`;
-    await request.query(query);
-
-    return await this.findById(userId);
+    if (error) throw error;
+    return data;
   }
 
   static async delete(userId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .query(`DELETE FROM ${this.tableName} WHERE UserId = @UserId`);
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    return true;
   }
 
   static async count() {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName}`,
-    );
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true });
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countByRole(role) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Role", sql.NVarChar(20), role)
-      .query(
-        `SELECT COUNT(*) as count FROM ${this.tableName} WHERE Role = @Role`,
-      );
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("role", role);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   static async getEmployeeSummary() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT 
-        u.UserId,
-        u.Name,
-        u.Email,
-        u.Role,
-        u.CreatedAt,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId) as ChecklistTotal,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId AND Status = 'DONE') as ChecklistDone,
-        (SELECT COUNT(*) FROM Documents WHERE UserId = u.UserId AND Status = 'PENDING') as PendingDocs,
-        (SELECT COUNT(*) FROM UserEquipment WHERE UserId = u.UserId AND ReturnedAt IS NULL) as BorrowingNow,
-        (SELECT TOP 1 ItemName FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastItemName,
-        (SELECT TOP 1 SerialNumber FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastSerialNumber,
-        (SELECT TOP 1 AssignedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastAssignedAt,
-        (SELECT TOP 1 ReturnedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY ReturnedAt DESC) as LastReturnedAt,
-        (SELECT TOP 1 EmployeeAck FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastEmployeeAck
-      FROM Users u
-      WHERE u.Role = 'EMPLOYEE'
-      ORDER BY u.CreatedAt DESC
-    `);
+    const { data: employees, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("role", "EMPLOYEE")
+      .order("created_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+
+    // get additional stats for each employee
+    const employeesWithStats = await Promise.all(
+      employees.map(async (employee) => {
+        // checklist stats
+        const { data: checklist } = await supabase
+          .from("user_checklist")
+          .select("status")
+          .eq("user_id", employee.user_id);
+
+        const checklistTotal = checklist?.length || 0;
+        const checklistDone =
+          checklist?.filter((item) => item.status === "DONE").length || 0;
+
+        // pending docs
+        const { data: pendingDocs } = await supabase
+          .from("documents")
+          .select("doc_id")
+          .eq("user_id", employee.user_id)
+          .eq("status", "PENDING");
+
+        // currently borrowing
+        const { data: borrowing } = await supabase
+          .from("user_equipment")
+          .select("assignment_id")
+          .eq("user_id", employee.user_id)
+          .is("returned_at", null);
+
+        // latest equipment
+        const { data: latestEquip } = await supabase
+          .from("user_equipment")
+          .select(
+            `
+            assigned_at,
+            returned_at,
+            employee_ack,
+            equipment!inner (
+              item_name,
+              serial_number
+            )
+          `,
+          )
+          .eq("user_id", employee.user_id)
+          .order("assigned_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        return {
+          UserId: employee.user_id,
+          Name: employee.name,
+          Email: employee.email,
+          Role: employee.role,
+          CreatedAt: employee.created_at,
+          ChecklistTotal: checklistTotal,
+          ChecklistDone: checklistDone,
+          PendingDocs: pendingDocs?.length || 0,
+          BorrowingNow: borrowing?.length || 0,
+          LastItemName: latestEquip?.equipment?.item_name || null,
+          LastSerialNumber: latestEquip?.equipment?.serial_number || null,
+          LastAssignedAt: latestEquip?.assigned_at || null,
+          LastReturnedAt: latestEquip?.returned_at || null,
+          LastEmployeeAck: latestEquip?.employee_ack || false,
+        };
+      }),
+    );
+
+    return employeesWithStats;
   }
 }
 

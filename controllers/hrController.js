@@ -1,42 +1,95 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getEmployees(req, res) {
   try {
     console.log("Getting employees list for HR:", req.user.email);
 
-    const pool = await getPool();
+    // get all employees
+    const { data: employees, error: employeesError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "EMPLOYEE")
+      .order("created_at", { ascending: false });
 
-    const result = await pool.request().query(`
-      SELECT 
-        u.UserId,
-        u.Name,
-        u.Email,
-        u.Role,
-        u.CreatedAt,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId) as ChecklistTotal,
-        (SELECT COUNT(*) FROM UserChecklist WHERE UserId = u.UserId AND Status = 'DONE') as ChecklistDone,
-        (SELECT COUNT(*) FROM Documents WHERE UserId = u.UserId AND Status = 'PENDING') as PendingDocs,
-        (SELECT COUNT(*) FROM UserEquipment WHERE UserId = u.UserId AND ReturnedAt IS NULL) as BorrowingNow,
-        (SELECT TOP 1 ItemName FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastItemName,
-        (SELECT TOP 1 SerialNumber FROM UserEquipment ue 
-         INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId 
-         WHERE ue.UserId = u.UserId ORDER BY ue.AssignedAt DESC) as LastSerialNumber,
-        (SELECT TOP 1 AssignedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastAssignedAt,
-        (SELECT TOP 1 ReturnedAt FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY ReturnedAt DESC) as LastReturnedAt,
-        (SELECT TOP 1 EmployeeAck FROM UserEquipment 
-         WHERE UserId = u.UserId ORDER BY AssignedAt DESC) as LastEmployeeAck
-      FROM Users u
-      WHERE u.Role = 'EMPLOYEE'
-      ORDER BY u.CreatedAt DESC
-    `);
+    if (employeesError) throw employeesError;
+
+    // get additional stats for each employee
+    const employeesWithStats = await Promise.all(
+      employees.map(async (employee) => {
+        // checklist stats
+        const { data: checklist, error: checklistError } = await supabase
+          .from("user_checklist")
+          .select("status")
+          .eq("user_id", employee.user_id);
+
+        if (checklistError) throw checklistError;
+
+        const checklistTotal = checklist.length;
+        const checklistDone = checklist.filter(
+          (item) => item.status === "DONE",
+        ).length;
+
+        // pending docs
+        const { data: pendingDocs, error: docsError } = await supabase
+          .from("documents")
+          .select("doc_id")
+          .eq("user_id", employee.user_id)
+          .eq("status", "PENDING");
+
+        if (docsError) throw docsError;
+
+        // currently borrowing
+        const { data: borrowing, error: borrowingError } = await supabase
+          .from("user_equipment")
+          .select("assignment_id")
+          .eq("user_id", employee.user_id)
+          .is("returned_at", null);
+
+        if (borrowingError) throw borrowingError;
+
+        // latest equipment
+        const { data: latestEquip, error: latestError } = await supabase
+          .from("user_equipment")
+          .select(
+            `
+            assigned_at,
+            returned_at,
+            employee_ack,
+            equipment!inner (
+              item_name,
+              serial_number
+            )
+          `,
+          )
+          .eq("user_id", employee.user_id)
+          .order("assigned_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestError) throw latestError;
+
+        return {
+          UserId: employee.user_id,
+          Name: employee.name,
+          Email: employee.email,
+          Role: employee.role,
+          CreatedAt: employee.created_at,
+          ChecklistTotal: checklistTotal,
+          ChecklistDone: checklistDone,
+          PendingDocs: pendingDocs.length,
+          BorrowingNow: borrowing.length,
+          LastItemName: latestEquip?.equipment?.item_name || null,
+          LastSerialNumber: latestEquip?.equipment?.serial_number || null,
+          LastAssignedAt: latestEquip?.assigned_at || null,
+          LastReturnedAt: latestEquip?.returned_at || null,
+          LastEmployeeAck: latestEquip?.employee_ack || false,
+        };
+      }),
+    );
 
     res.json({
       success: true,
-      employees: result.recordset,
+      employees: employeesWithStats,
     });
   } catch (err) {
     console.error("GET employees error:", err);

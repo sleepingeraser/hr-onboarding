@@ -1,136 +1,149 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class DocumentsModel {
-  static tableName = "Documents";
+  static tableName = "documents";
 
   static async findById(docId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("DocId", sql.Int, docId)
-      .query(`SELECT * FROM ${this.tableName} WHERE DocId = @DocId`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("doc_id", docId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findByUser(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE UserId = @UserId 
-        ORDER BY UploadedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("user_id", userId)
+      .order("uploaded_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async findPending() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT 
-        d.*,
-        u.Name,
-        u.Email
-      FROM ${this.tableName} d
-      INNER JOIN Users u ON d.UserId = u.UserId
-      WHERE d.Status = 'PENDING'
-      ORDER BY d.UploadedAt ASC
-    `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(
+        `
+        *,
+        users!inner (
+          name,
+          email
+        )
+      `,
+      )
+      .eq("status", "PENDING")
+      .order("uploaded_at", { ascending: true });
 
-    return result.recordset;
+    if (error) throw error;
+
+    // transform data
+    return (data || []).map((doc) => ({
+      DocId: doc.doc_id,
+      DocType: doc.doc_type,
+      FileUrl: doc.file_url,
+      Status: doc.status,
+      HRComment: doc.hr_comment,
+      UploadedAt: doc.uploaded_at,
+      UserId: doc.users.user_id,
+      Name: doc.users.name,
+      Email: doc.users.email,
+    }));
   }
 
   static async findByStatus(userId, status) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("Status", sql.NVarChar(20), status).query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE UserId = @UserId AND Status = @Status 
-        ORDER BY UploadedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", status)
+      .order("uploaded_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async create(documentData) {
     const { userId, docType, fileUrl } = documentData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("DocType", sql.NVarChar(50), docType)
-      .input("FileUrl", sql.NVarChar(300), fileUrl)
-      .input("Status", sql.NVarChar(20), "PENDING")
-      .input("UploadedAt", sql.DateTime2, new Date()).query(`
-        INSERT INTO ${this.tableName} (UserId, DocType, FileUrl, Status, UploadedAt)
-        OUTPUT INSERTED.*
-        VALUES (@UserId, @DocType, @FileUrl, @Status, @UploadedAt)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          user_id: userId,
+          doc_type: docType,
+          file_url: fileUrl,
+          status: "PENDING",
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async updateStatus(docId, status, comment = null) {
-    const pool = await getPool();
-    const request = pool
-      .request()
-      .input("DocId", sql.Int, docId)
-      .input("Status", sql.NVarChar(20), status);
-
-    let query = `UPDATE ${this.tableName} SET Status = @Status`;
-
+    const updates = { status };
     if (comment !== null) {
-      request.input("Comment", sql.NVarChar(300), comment);
-      query += `, HRComment = @Comment`;
+      updates.hr_comment = comment;
     }
 
-    query += ` WHERE DocId = @DocId`;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("doc_id", docId)
+      .select()
+      .single();
 
-    await request.query(query);
-    return await this.findById(docId);
+    if (error) throw error;
+    return data;
   }
 
   static async countByUser(userId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .query(
-        `SELECT COUNT(*) as count FROM ${this.tableName} WHERE UserId = @UserId`,
-      );
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countPendingByUser(userId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .query(
-        `SELECT COUNT(*) as count FROM ${this.tableName} WHERE UserId = @UserId AND Status = 'PENDING'`,
-      );
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "PENDING");
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countPending() {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName} WHERE Status = 'PENDING'`,
-    );
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("status", "PENDING");
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async delete(docId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("DocId", sql.Int, docId)
-      .query(`DELETE FROM ${this.tableName} WHERE DocId = @DocId`);
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("doc_id", docId);
+
+    if (error) throw error;
+    return true;
   }
 }
 

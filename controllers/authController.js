@@ -1,15 +1,15 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 const { JWT_SECRET } = require("../middleware/auth");
 
 function signToken(user) {
   return jwt.sign(
     {
-      userId: user.UserId,
-      name: user.Name,
-      email: user.Email,
-      role: user.Role,
+      userId: user.user_id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
     },
     JWT_SECRET,
     { expiresIn: "7d" },
@@ -19,8 +19,6 @@ function signToken(user) {
 async function register(req, res) {
   try {
     const { name, email, password, role } = req.body;
-
-    console.log("Registration attempt for:", email);
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({
@@ -36,22 +34,14 @@ async function register(req, res) {
       });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "password must be at least 6 characters",
-      });
-    }
+    // Check if user exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from("users")
+      .select("user_id")
+      .eq("email", email)
+      .single();
 
-    const pool = await getPool();
-
-    // check existing
-    const existing = await pool
-      .request()
-      .input("Email", sql.NVarChar(200), email)
-      .query("SELECT TOP 1 UserId FROM Users WHERE Email=@Email");
-
-    if (existing.recordset.length > 0) {
+    if (existingUser) {
       return res.status(409).json({
         success: false,
         message: "Email already registered",
@@ -60,41 +50,52 @@ async function register(req, res) {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // insert + return new row
-    const inserted = await pool
-      .request()
-      .input("Name", sql.NVarChar(120), name)
-      .input("Email", sql.NVarChar(200), email)
-      .input("PasswordHash", sql.NVarChar(200), passwordHash)
-      .input("Role", sql.NVarChar(20), role).query(`
-        INSERT INTO Users (Name, Email, PasswordHash, Role)
-        OUTPUT INSERTED.UserId, INSERTED.Name, INSERTED.Email, INSERTED.Role, INSERTED.CreatedAt
-        VALUES (@Name, @Email, @PasswordHash, @Role)
-      `);
+    // Insert new user
+    const { data: user, error: insertError } = await supabase
+      .from("users")
+      .insert([
+        {
+          name,
+          email,
+          password_hash: passwordHash,
+          role,
+        },
+      ])
+      .select()
+      .single();
 
-    const user = inserted.recordset[0];
-    console.log("User created:", user.Email);
+    if (insertError) throw insertError;
 
-    // auto-create checklist for user
-    await pool.request().input("UserId", sql.Int, user.UserId).query(`
-      INSERT INTO UserChecklist (UserId, ItemId, Status)
-      SELECT @UserId, ItemId, 'PENDING'
-      FROM ChecklistItems
-      WHERE IsActive = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM UserChecklist uc WHERE uc.UserId=@UserId AND uc.ItemId=ChecklistItems.ItemId
-        )
-    `);
+    // Auto-create checklist for user
+    const { data: checklistItems } = await supabase
+      .from("checklist_items")
+      .select("item_id")
+      .eq("is_active", true);
 
-    // auto-assign trainings
-    await pool.request().input("UserId", sql.Int, user.UserId).query(`
-      INSERT INTO UserTraining (UserId, TrainingId, Attendance)
-      SELECT @UserId, TrainingId, 'UPCOMING'
-      FROM Trainings
-      WHERE NOT EXISTS (
-        SELECT 1 FROM UserTraining ut WHERE ut.UserId=@UserId AND ut.TrainingId=Trainings.TrainingId
-      )
-    `);
+    if (checklistItems && checklistItems.length > 0) {
+      const userChecklist = checklistItems.map((item) => ({
+        user_id: user.user_id,
+        item_id: item.item_id,
+        status: "PENDING",
+      }));
+
+      await supabase.from("user_checklist").insert(userChecklist);
+    }
+
+    // Auto-assign trainings
+    const { data: trainings } = await supabase
+      .from("trainings")
+      .select("training_id");
+
+    if (trainings && trainings.length > 0) {
+      const userTrainings = trainings.map((training) => ({
+        user_id: user.user_id,
+        training_id: training.training_id,
+        attendance: "UPCOMING",
+      }));
+
+      await supabase.from("user_training").insert(userTrainings);
+    }
 
     const token = signToken(user);
 
@@ -102,10 +103,10 @@ async function register(req, res) {
       success: true,
       token,
       user: {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
+        userId: user.user_id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (err) {
@@ -121,8 +122,6 @@ async function login(req, res) {
   try {
     const { email, password } = req.body;
 
-    console.log("Login attempt for:", email);
-
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -130,27 +129,23 @@ async function login(req, res) {
       });
     }
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Email", sql.NVarChar(200), email)
-      .query(
-        "SELECT TOP 1 UserId, Name, Email, PasswordHash, Role FROM Users WHERE Email=@Email",
-      );
+    // Get user
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single();
 
-    if (result.recordset.length === 0) {
-      console.log("User not found:", email);
+    if (error || !user) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
 
-    const user = result.recordset[0];
-    const ok = await bcrypt.compare(password, user.PasswordHash);
+    const ok = await bcrypt.compare(password, user.password_hash);
 
     if (!ok) {
-      console.log("Invalid password for:", email);
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -158,16 +153,15 @@ async function login(req, res) {
     }
 
     const token = signToken(user);
-    console.log("Login successful for:", email);
 
     return res.json({
       success: true,
       token,
       user: {
-        userId: user.UserId,
-        name: user.Name,
-        email: user.Email,
-        role: user.Role,
+        userId: user.user_id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (err) {
@@ -181,10 +175,17 @@ async function login(req, res) {
 
 async function getMe(req, res) {
   try {
-    console.log("GetMe called for user:", req.user.email);
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("user_id, name, email, role, created_at")
+      .eq("user_id", req.user.userId)
+      .single();
+
+    if (error) throw error;
+
     return res.json({
       success: true,
-      user: req.user,
+      user,
     });
   } catch (err) {
     console.error("GetMe error:", err);

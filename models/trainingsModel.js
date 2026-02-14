@@ -1,217 +1,242 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class TrainingsModel {
-  static tableName = "Trainings";
-  static userTableName = "UserTraining";
+  static tableName = "trainings";
+  static userTableName = "user_training";
 
   // training methods
   static async findAll() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      ORDER BY StartsAt ASC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .order("starts_at", { ascending: true });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findById(trainingId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("TrainingId", sql.Int, trainingId)
-      .query(`SELECT * FROM ${this.tableName} WHERE TrainingId = @TrainingId`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("training_id", trainingId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findUpcoming() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      WHERE StartsAt > GETDATE() 
-      ORDER BY StartsAt ASC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .gt("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async create(trainingData) {
     const { title, startsAt, location, notes } = trainingData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Title", sql.NVarChar(200), title)
-      .input("StartsAt", sql.DateTime2, new Date(startsAt))
-      .input("Location", sql.NVarChar(200), location || null)
-      .input("Notes", sql.NVarChar(500), notes || null).query(`
-        INSERT INTO ${this.tableName} (Title, StartsAt, Location, Notes)
-        OUTPUT INSERTED.*
-        VALUES (@Title, @StartsAt, @Location, @Notes)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          title,
+          starts_at: new Date(startsAt).toISOString(),
+          location: location || null,
+          notes: notes || null,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async update(trainingId, trainingData) {
-    const pool = await getPool();
-    const request = pool.request().input("TrainingId", sql.Int, trainingId);
+    const updates = {};
+    if (trainingData.title !== undefined) updates.title = trainingData.title;
+    if (trainingData.startsAt !== undefined)
+      updates.starts_at = new Date(trainingData.startsAt).toISOString();
+    if (trainingData.location !== undefined)
+      updates.location = trainingData.location;
+    if (trainingData.notes !== undefined) updates.notes = trainingData.notes;
 
-    const updates = [];
-    if (trainingData.title !== undefined) {
-      request.input("Title", sql.NVarChar(200), trainingData.title);
-      updates.push("Title = @Title");
-    }
-    if (trainingData.startsAt !== undefined) {
-      request.input("StartsAt", sql.DateTime2, new Date(trainingData.startsAt));
-      updates.push("StartsAt = @StartsAt");
-    }
-    if (trainingData.location !== undefined) {
-      request.input("Location", sql.NVarChar(200), trainingData.location);
-      updates.push("Location = @Location");
-    }
-    if (trainingData.notes !== undefined) {
-      request.input("Notes", sql.NVarChar(500), trainingData.notes);
-      updates.push("Notes = @Notes");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("training_id", trainingId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE TrainingId = @TrainingId`;
-    await request.query(query);
-
-    return await this.findById(trainingId);
+    if (error) throw error;
+    return data;
   }
 
   static async delete(trainingId) {
-    const pool = await getPool();
+    // delete all user associations
+    const { error: userError } = await supabase
+      .from(this.userTableName)
+      .delete()
+      .eq("training_id", trainingId);
 
-    // first delete all user associations
-    await pool
-      .request()
-      .input("TrainingId", sql.Int, trainingId)
-      .query(
-        `DELETE FROM ${this.userTableName} WHERE TrainingId = @TrainingId`,
-      );
+    if (userError) throw userError;
 
-    // then delete the training
-    await pool
-      .request()
-      .input("TrainingId", sql.Int, trainingId)
-      .query(`DELETE FROM ${this.tableName} WHERE TrainingId = @TrainingId`);
+    // delete the training
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("training_id", trainingId);
+
+    if (error) throw error;
+    return true;
   }
 
   // user Training methods
   static async getUserTrainings(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          t.*,
-          ISNULL(ut.Attendance, 'UPCOMING') as Attendance
-        FROM ${this.tableName} t
-        LEFT JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId AND ut.UserId = @UserId
-        WHERE ut.UserId = @UserId OR t.TrainingId IN (
-          SELECT TrainingId FROM ${this.tableName}
-          WHERE NOT EXISTS (
-            SELECT 1 FROM ${this.userTableName} 
-            WHERE TrainingId = t.TrainingId AND UserId = @UserId
-          )
-        )
-        ORDER BY t.StartsAt ASC
-      `);
+    // get all trainings
+    const { data: allTrainings, error: trainingsError } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .order("starts_at", { ascending: true });
 
-    return result.recordset;
+    if (trainingsError) throw trainingsError;
+
+    // get user's attendance
+    const { data: userAttendance, error: attendanceError } = await supabase
+      .from(this.userTableName)
+      .select("training_id, attendance")
+      .eq("user_id", userId);
+
+    if (attendanceError) throw attendanceError;
+
+    // create attendance map
+    const attendanceMap = {};
+    userAttendance.forEach((record) => {
+      attendanceMap[record.training_id] = record.attendance;
+    });
+
+    // combine data
+    return (allTrainings || []).map((training) => ({
+      TrainingId: training.training_id,
+      Title: training.title,
+      StartsAt: training.starts_at,
+      Location: training.location,
+      Notes: training.notes,
+      Attendance: attendanceMap[training.training_id] || "UPCOMING",
+    }));
   }
 
   static async getUserUpcomingTrainings(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          t.*,
-          ISNULL(ut.Attendance, 'UPCOMING') as Attendance
-        FROM ${this.tableName} t
-        LEFT JOIN ${this.userTableName} ut ON t.TrainingId = ut.TrainingId AND ut.UserId = @UserId
-        WHERE (ut.UserId = @UserId OR t.TrainingId IN (
-          SELECT TrainingId FROM ${this.tableName}
-          WHERE NOT EXISTS (
-            SELECT 1 FROM ${this.userTableName} 
-            WHERE TrainingId = t.TrainingId AND UserId = @UserId
-          )
-        ))
-        AND t.StartsAt > GETDATE()
-        AND (ut.Attendance IS NULL OR ut.Attendance = 'UPCOMING')
-        ORDER BY t.StartsAt ASC
-      `);
+    const trainings = await this.getUserTrainings(userId);
+    const now = new Date().toISOString();
 
-    return result.recordset;
+    return trainings.filter(
+      (t) => t.StartsAt > now && t.Attendance === "UPCOMING",
+    );
   }
 
   static async getUserAttendance(userId, trainingId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("TrainingId", sql.Int, trainingId)
-      .query(
-        `SELECT * FROM ${this.userTableName} WHERE UserId = @UserId AND TrainingId = @TrainingId`,
-      );
+    const { data, error } = await supabase
+      .from(this.userTableName)
+      .select("*")
+      .eq("user_id", userId)
+      .eq("training_id", trainingId)
+      .maybeSingle();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async updateAttendance(userId, trainingId, attendance) {
-    const pool = await getPool();
+    // check if record exists
+    const { data: existing } = await supabase
+      .from(this.userTableName)
+      .select("*")
+      .eq("user_id", userId)
+      .eq("training_id", trainingId)
+      .maybeSingle();
 
-    // Check if record exists
-    const exists = await this.getUserAttendance(userId, trainingId);
+    if (existing) {
+      // update
+      const { error } = await supabase
+        .from(this.userTableName)
+        .update({ attendance })
+        .eq("user_id", userId)
+        .eq("training_id", trainingId);
 
-    if (exists) {
-      await pool
-        .request()
-        .input("UserId", sql.Int, userId)
-        .input("TrainingId", sql.Int, trainingId)
-        .input("Attendance", sql.NVarChar(20), attendance).query(`
-          UPDATE ${this.userTableName}
-          SET Attendance = @Attendance
-          WHERE UserId = @UserId AND TrainingId = @TrainingId
-        `);
+      if (error) throw error;
     } else {
-      await pool
-        .request()
-        .input("UserId", sql.Int, userId)
-        .input("TrainingId", sql.Int, trainingId)
-        .input("Attendance", sql.NVarChar(20), attendance).query(`
-          INSERT INTO ${this.userTableName} (UserId, TrainingId, Attendance)
-          VALUES (@UserId, @TrainingId, @Attendance)
-        `);
+      // Insert
+      const { error } = await supabase.from(this.userTableName).insert([
+        {
+          user_id: userId,
+          training_id: trainingId,
+          attendance,
+        },
+      ]);
+
+      if (error) throw error;
     }
   }
 
   static async assignToAllEmployees(trainingId) {
-    const pool = await getPool();
-    await pool.request().input("TrainingId", sql.Int, trainingId).query(`
-        INSERT INTO ${this.userTableName} (UserId, TrainingId, Attendance)
-        SELECT UserId, @TrainingId, 'UPCOMING'
-        FROM Users
-        WHERE Role = 'EMPLOYEE'
-          AND NOT EXISTS (
-            SELECT 1 FROM ${this.userTableName} ut 
-            WHERE ut.UserId = Users.UserId AND ut.TrainingId = @TrainingId
-          )
-      `);
+    // Get all employees
+    const { data: employees, error: empError } = await supabase
+      .from("users")
+      .select("user_id")
+      .eq("role", "EMPLOYEE");
+
+    if (empError) throw empError;
+
+    if (employees && employees.length > 0) {
+      // get existing assignments
+      const { data: existing } = await supabase
+        .from(this.userTableName)
+        .select("user_id")
+        .eq("training_id", trainingId);
+
+      const existingUserIds = new Set(existing?.map((e) => e.user_id) || []);
+
+      // create new assignments
+      const newAssignments = employees
+        .filter((emp) => !existingUserIds.has(emp.user_id))
+        .map((emp) => ({
+          user_id: emp.user_id,
+          training_id: trainingId,
+          attendance: "UPCOMING",
+        }));
+
+      if (newAssignments.length > 0) {
+        const { error } = await supabase
+          .from(this.userTableName)
+          .insert(newAssignments);
+
+        if (error) throw error;
+      }
+    }
   }
 
   static async countAttendees(trainingId, attendance = null) {
-    const pool = await getPool();
-    const request = pool.request().input("TrainingId", sql.Int, trainingId);
+    let query = supabase
+      .from(this.userTableName)
+      .select("*", { count: "exact", head: true })
+      .eq("training_id", trainingId);
 
-    let query = `SELECT COUNT(*) as count FROM ${this.userTableName} WHERE TrainingId = @TrainingId`;
     if (attendance) {
-      request.input("Attendance", sql.NVarChar(20), attendance);
-      query += ` AND Attendance = @Attendance`;
+      query = query.eq("attendance", attendance);
     }
 
-    const result = await request.query(query);
-    return result.recordset[0].count;
+    const { count, error } = await query;
+
+    if (error) throw error;
+    return count || 0;
   }
 }
 

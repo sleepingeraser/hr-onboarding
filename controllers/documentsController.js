@@ -1,28 +1,20 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 const path = require("path");
 const fs = require("fs");
 
 async function getMyDocuments(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId).query(`
-        SELECT 
-          DocId,
-          DocType,
-          FileUrl,
-          Status,
-          HRComment,
-          UploadedAt
-        FROM Documents
-        WHERE UserId = @UserId
-        ORDER BY UploadedAt DESC
-      `);
+    const { data: documents, error } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("user_id", req.user.userId)
+      .order("uploaded_at", { ascending: false });
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      documents: result.recordset,
+      documents: documents || [],
     });
   } catch (err) {
     console.error("GET my documents error:", err);
@@ -53,15 +45,16 @@ async function uploadDocument(req, res) {
 
     const fileUrl = `/uploads/${req.file.filename}`;
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("DocType", sql.NVarChar(50), docType)
-      .input("FileUrl", sql.NVarChar(300), fileUrl).query(`
-        INSERT INTO Documents (UserId, DocType, FileUrl, Status)
-        VALUES (@UserId, @DocType, @FileUrl, 'PENDING')
-      `);
+    const { error } = await supabase.from("documents").insert([
+      {
+        user_id: req.user.userId,
+        doc_type: docType,
+        file_url: fileUrl,
+        status: "PENDING",
+      },
+    ]);
+
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
@@ -83,27 +76,44 @@ async function uploadDocument(req, res) {
 
 async function getPendingDocuments(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT 
-        d.DocId,
-        d.DocType,
-        d.FileUrl,
-        d.Status,
-        d.HRComment,
-        d.UploadedAt,
-        u.UserId,
-        u.Name,
-        u.Email
-      FROM Documents d
-      INNER JOIN Users u ON d.UserId = u.UserId
-      WHERE d.Status = 'PENDING'
-      ORDER BY d.UploadedAt ASC
-    `);
+    const { data: documents, error } = await supabase
+      .from("documents")
+      .select(
+        `
+        doc_id,
+        doc_type,
+        file_url,
+        status,
+        hr_comment,
+        uploaded_at,
+        users!inner (
+          user_id,
+          name,
+          email
+        )
+      `,
+      )
+      .eq("status", "PENDING")
+      .order("uploaded_at", { ascending: true });
+
+    if (error) throw error;
+
+    // transform data to match expected format
+    const formattedDocs = documents.map((doc) => ({
+      DocId: doc.doc_id,
+      DocType: doc.doc_type,
+      FileUrl: doc.file_url,
+      Status: doc.status,
+      HRComment: doc.hr_comment,
+      UploadedAt: doc.uploaded_at,
+      UserId: doc.users.user_id,
+      Name: doc.users.name,
+      Email: doc.users.email,
+    }));
 
     res.json({
       success: true,
-      documents: result.recordset,
+      documents: formattedDocs,
     });
   } catch (err) {
     console.error("GET pending docs error:", err);
@@ -126,16 +136,15 @@ async function updateDocumentStatus(req, res) {
       });
     }
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("DocId", sql.Int, docId)
-      .input("Status", sql.NVarChar(20), status)
-      .input("Comment", sql.NVarChar(300), comment || null).query(`
-        UPDATE Documents
-        SET Status = @Status, HRComment = @Comment
-        WHERE DocId = @DocId
-      `);
+    const { error } = await supabase
+      .from("documents")
+      .update({
+        status: status,
+        hr_comment: comment || null,
+      })
+      .eq("doc_id", docId);
+
+    if (error) throw error;
 
     res.json({
       success: true,

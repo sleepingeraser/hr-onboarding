@@ -1,26 +1,27 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getAnnouncements(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Role", sql.NVarChar(20), req.user.role).query(`
-        SELECT 
-          AnnouncementId,
-          Title,
-          Body,
-          Audience,
-          CreatedAt,
-          CreatedByUserId
-        FROM Announcements
-        WHERE Audience = 'ALL' OR Audience = @Role
-        ORDER BY CreatedAt DESC
-      `);
+    const { data: announcements, error } = await supabase
+      .from("announcements")
+      .select(
+        `
+        announcement_id,
+        title,
+        body,
+        audience,
+        created_at,
+        created_by_user_id
+      `,
+      )
+      .or(`audience.eq.ALL,audience.eq.${req.user.role}`)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      announcements: result.recordset,
+      announcements: announcements || [],
     });
   } catch (err) {
     console.error("GET announcements error:", err);
@@ -49,16 +50,16 @@ async function createAnnouncement(req, res) {
       });
     }
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("Title", sql.NVarChar(120), title)
-      .input("Body", sql.NVarChar(sql.MAX), body)
-      .input("Audience", sql.NVarChar(20), audience)
-      .input("CreatedByUserId", sql.Int, req.user.userId).query(`
-        INSERT INTO Announcements (Title, Body, Audience, CreatedByUserId)
-        VALUES (@Title, @Body, @Audience, @CreatedByUserId)
-      `);
+    const { error } = await supabase.from("announcements").insert([
+      {
+        title: title,
+        body: body,
+        audience: audience,
+        created_by_user_id: req.user.userId,
+      },
+    ]);
+
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
@@ -77,13 +78,12 @@ async function deleteAnnouncement(req, res) {
   try {
     const { announcementId } = req.params;
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("AnnouncementId", sql.Int, announcementId)
-      .query(
-        "DELETE FROM Announcements WHERE AnnouncementId = @AnnouncementId",
-      );
+    const { error } = await supabase
+      .from("announcements")
+      .delete()
+      .eq("announcement_id", announcementId);
+
+    if (error) throw error;
 
     res.json({
       success: true,

@@ -1,31 +1,47 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getMyEquipment(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId).query(`
-        SELECT 
-          ue.AssignmentId,
-          e.EquipmentId,
-          e.ItemName,
-          e.SerialNumber,
-          e.Category,
-          ue.AssignedAt,
-          ue.DueBackAt,
-          ue.Notes,
-          ue.EmployeeAck,
-          ue.ReturnedAt
-        FROM UserEquipment ue
-        INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId
-        WHERE ue.UserId = @UserId
-        ORDER BY ue.AssignedAt DESC
-      `);
+    const { data: equipment, error } = await supabase
+      .from("user_equipment")
+      .select(
+        `
+        assignment_id,
+        assigned_at,
+        due_back_at,
+        notes,
+        employee_ack,
+        returned_at,
+        equipment!inner (
+          equipment_id,
+          item_name,
+          serial_number,
+          category
+        )
+      `,
+      )
+      .eq("user_id", req.user.userId)
+      .order("assigned_at", { ascending: false });
+
+    if (error) throw error;
+
+    // transform data
+    const formattedEquipment = equipment.map((item) => ({
+      AssignmentId: item.assignment_id,
+      EquipmentId: item.equipment.equipment_id,
+      ItemName: item.equipment.item_name,
+      SerialNumber: item.equipment.serial_number,
+      Category: item.equipment.category,
+      AssignedAt: item.assigned_at,
+      DueBackAt: item.due_back_at,
+      Notes: item.notes,
+      EmployeeAck: item.employee_ack,
+      ReturnedAt: item.returned_at,
+    }));
 
     res.json({
       success: true,
-      equipment: result.recordset,
+      equipment: formattedEquipment,
     });
   } catch (err) {
     console.error("GET my equipment error:", err);
@@ -40,15 +56,14 @@ async function acknowledgeEquipment(req, res) {
   try {
     const { assignmentId } = req.params;
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("AssignmentId", sql.Int, assignmentId)
-      .input("UserId", sql.Int, req.user.userId).query(`
-        UPDATE UserEquipment
-        SET EmployeeAck = 1
-        WHERE AssignmentId = @AssignmentId AND UserId = @UserId AND ReturnedAt IS NULL
-      `);
+    const { error } = await supabase
+      .from("user_equipment")
+      .update({ employee_ack: true })
+      .eq("assignment_id", assignmentId)
+      .eq("user_id", req.user.userId)
+      .is("returned_at", null);
+
+    if (error) throw error;
 
     res.json({
       success: true,
@@ -65,22 +80,16 @@ async function acknowledgeEquipment(req, res) {
 
 async function getAllEquipment(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT 
-        EquipmentId,
-        ItemName,
-        SerialNumber,
-        Category,
-        Status,
-        CreatedAt
-      FROM Equipment
-      ORDER BY CreatedAt DESC
-    `);
+    const { data: equipment, error } = await supabase
+      .from("equipment")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      equipment: result.recordset,
+      equipment: equipment || [],
     });
   } catch (err) {
     console.error("GET equipment error:", err);
@@ -93,28 +102,47 @@ async function getAllEquipment(req, res) {
 
 async function getAssignments(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT 
-        ue.AssignmentId,
-        u.Name,
-        u.Email,
-        e.ItemName,
-        e.SerialNumber,
-        ue.AssignedAt,
-        ue.DueBackAt,
-        ue.Notes,
-        ue.EmployeeAck,
-        ue.ReturnedAt
-      FROM UserEquipment ue
-      INNER JOIN Users u ON ue.UserId = u.UserId
-      INNER JOIN Equipment e ON ue.EquipmentId = e.EquipmentId
-      ORDER BY ue.AssignedAt DESC
-    `);
+    const { data: assignments, error } = await supabase
+      .from("user_equipment")
+      .select(
+        `
+        assignment_id,
+        assigned_at,
+        due_back_at,
+        notes,
+        employee_ack,
+        returned_at,
+        users!inner (
+          name,
+          email
+        ),
+        equipment!inner (
+          item_name,
+          serial_number
+        )
+      `,
+      )
+      .order("assigned_at", { ascending: false });
+
+    if (error) throw error;
+
+    // transform data
+    const formattedAssignments = assignments.map((a) => ({
+      AssignmentId: a.assignment_id,
+      Name: a.users.name,
+      Email: a.users.email,
+      ItemName: a.equipment.item_name,
+      SerialNumber: a.equipment.serial_number,
+      AssignedAt: a.assigned_at,
+      DueBackAt: a.due_back_at,
+      Notes: a.notes,
+      EmployeeAck: a.employee_ack,
+      ReturnedAt: a.returned_at,
+    }));
 
     res.json({
       success: true,
-      assignments: result.recordset,
+      assignments: formattedAssignments,
     });
   } catch (err) {
     console.error("GET assignments error:", err);
@@ -136,15 +164,16 @@ async function createEquipment(req, res) {
       });
     }
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("ItemName", sql.NVarChar(120), itemName)
-      .input("SerialNumber", sql.NVarChar(120), serialNumber || null)
-      .input("Category", sql.NVarChar(50), category || null).query(`
-        INSERT INTO Equipment (ItemName, SerialNumber, Category, Status)
-        VALUES (@ItemName, @SerialNumber, @Category, 'AVAILABLE')
-      `);
+    const { error } = await supabase.from("equipment").insert([
+      {
+        item_name: itemName,
+        serial_number: serialNumber || null,
+        category: category || null,
+        status: "AVAILABLE",
+      },
+    ]);
+
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
@@ -170,15 +199,16 @@ async function assignEquipment(req, res) {
       });
     }
 
-    const pool = await getPool();
-
     // check if equipment is available
-    const checkResult = await pool
-      .request()
-      .input("EquipmentId", sql.Int, equipmentId)
-      .query("SELECT Status FROM Equipment WHERE EquipmentId = @EquipmentId");
+    const { data: equipment, error: checkError } = await supabase
+      .from("equipment")
+      .select("status")
+      .eq("equipment_id", equipmentId)
+      .single();
 
-    if (checkResult.recordset[0]?.Status !== "AVAILABLE") {
+    if (checkError) throw checkError;
+
+    if (equipment.status !== "AVAILABLE") {
       return res.status(400).json({
         success: false,
         message: "Equipment not available",
@@ -186,23 +216,27 @@ async function assignEquipment(req, res) {
     }
 
     // create assignment
-    await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("EquipmentId", sql.Int, equipmentId)
-      .input("DueBackAt", sql.DateTime2, dueBackAt ? new Date(dueBackAt) : null)
-      .input("Notes", sql.NVarChar(250), notes || null).query(`
-        INSERT INTO UserEquipment (UserId, EquipmentId, DueBackAt, Notes, EmployeeAck)
-        VALUES (@UserId, @EquipmentId, @DueBackAt, @Notes, 0)
-      `);
+    const { error: assignError } = await supabase
+      .from("user_equipment")
+      .insert([
+        {
+          user_id: userId,
+          equipment_id: equipmentId,
+          due_back_at: dueBackAt ? new Date(dueBackAt).toISOString() : null,
+          notes: notes || null,
+          employee_ack: false,
+        },
+      ]);
+
+    if (assignError) throw assignError;
 
     // update equipment status
-    await pool
-      .request()
-      .input("EquipmentId", sql.Int, equipmentId)
-      .query(
-        "UPDATE Equipment SET Status = 'ASSIGNED' WHERE EquipmentId = @EquipmentId",
-      );
+    const { error: updateError } = await supabase
+      .from("equipment")
+      .update({ status: "ASSIGNED" })
+      .eq("equipment_id", equipmentId);
+
+    if (updateError) throw updateError;
 
     res.status(201).json({
       success: true,
@@ -221,39 +255,35 @@ async function markReturned(req, res) {
   try {
     const { assignmentId } = req.params;
 
-    const pool = await getPool();
+    // get assignment details
+    const { data: assignment, error: getError } = await supabase
+      .from("user_equipment")
+      .select("equipment_id")
+      .eq("assignment_id", assignmentId)
+      .single();
 
-    // get equipment ID
-    const getResult = await pool
-      .request()
-      .input("AssignmentId", sql.Int, assignmentId)
-      .query(
-        "SELECT EquipmentId FROM UserEquipment WHERE AssignmentId = @AssignmentId",
-      );
-
-    if (getResult.recordset.length === 0) {
+    if (getError || !assignment) {
       return res.status(404).json({
         success: false,
         message: "Assignment not found",
       });
     }
 
-    const equipmentId = getResult.recordset[0].EquipmentId;
+    // mark as returned
+    const { error: updateError } = await supabase
+      .from("user_equipment")
+      .update({ returned_at: new Date().toISOString() })
+      .eq("assignment_id", assignmentId);
 
-    // mark returned
-    await pool.request().input("AssignmentId", sql.Int, assignmentId).query(`
-        UPDATE UserEquipment
-        SET ReturnedAt = SYSDATETIME()
-        WHERE AssignmentId = @AssignmentId
-      `);
+    if (updateError) throw updateError;
 
     // update equipment status
-    await pool
-      .request()
-      .input("EquipmentId", sql.Int, equipmentId)
-      .query(
-        "UPDATE Equipment SET Status = 'AVAILABLE' WHERE EquipmentId = @EquipmentId",
-      );
+    const { error: equipError } = await supabase
+      .from("equipment")
+      .update({ status: "AVAILABLE" })
+      .eq("equipment_id", assignment.equipment_id);
+
+    if (equipError) throw equipError;
 
     res.json({
       success: true,

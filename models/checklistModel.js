@@ -1,166 +1,176 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class ChecklistModel {
-  static tableName = "ChecklistItems";
-  static userTableName = "UserChecklist";
+  static tableName = "checklist_items";
+  static userTableName = "user_checklist";
 
   // checklist items methods
   static async findAllItems() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      WHERE IsActive = 1 
-      ORDER BY 
-        CASE Stage
-          WHEN 'DAY1' THEN 1
-          WHEN 'WEEK1' THEN 2
-          WHEN 'MONTH1' THEN 3
-        END
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("is_active", true)
+      .order("item_id");
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findItemById(itemId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("ItemId", sql.Int, itemId)
-      .query(`SELECT * FROM ${this.tableName} WHERE ItemId = @ItemId`);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("item_id", itemId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async createItem(itemData) {
     const { title, stage, description } = itemData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Title", sql.NVarChar(200), title)
-      .input("Stage", sql.NVarChar(20), stage)
-      .input("Description", sql.NVarChar(500), description || null).query(`
-        INSERT INTO ${this.tableName} (Title, Stage, Description, IsActive)
-        OUTPUT INSERTED.*
-        VALUES (@Title, @Stage, @Description, 1)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          title,
+          stage,
+          description: description || null,
+          is_active: true,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async updateItem(itemId, itemData) {
-    const pool = await getPool();
-    const request = pool.request().input("ItemId", sql.Int, itemId);
+    const updates = {};
+    if (itemData.title !== undefined) updates.title = itemData.title;
+    if (itemData.stage !== undefined) updates.stage = itemData.stage;
+    if (itemData.description !== undefined)
+      updates.description = itemData.description;
+    if (itemData.isActive !== undefined) updates.is_active = itemData.isActive;
 
-    const updates = [];
-    if (itemData.title !== undefined) {
-      request.input("Title", sql.NVarChar(200), itemData.title);
-      updates.push("Title = @Title");
-    }
-    if (itemData.stage !== undefined) {
-      request.input("Stage", sql.NVarChar(20), itemData.stage);
-      updates.push("Stage = @Stage");
-    }
-    if (itemData.description !== undefined) {
-      request.input("Description", sql.NVarChar(500), itemData.description);
-      updates.push("Description = @Description");
-    }
-    if (itemData.isActive !== undefined) {
-      request.input("IsActive", sql.Bit, itemData.isActive);
-      updates.push("IsActive = @IsActive");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("item_id", itemId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE ItemId = @ItemId`;
-    await request.query(query);
-
-    return await this.findItemById(itemId);
+    if (error) throw error;
+    return data;
   }
 
   static async deleteItem(itemId) {
-    return await this.updateItem(itemId, { isActive: 0 });
+    return await this.updateItem(itemId, { isActive: false });
   }
 
   // user checklist methods
   static async getUserChecklist(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          ci.ItemId,
-          ci.Title,
-          ci.Stage,
-          ci.Description,
-          uc.Status,
-          uc.UpdatedAt
-        FROM ChecklistItems ci
-        INNER JOIN UserChecklist uc ON ci.ItemId = uc.ItemId
-        WHERE uc.UserId = @UserId AND ci.IsActive = 1
-        ORDER BY 
-          CASE ci.Stage
-            WHEN 'DAY1' THEN 1
-            WHEN 'WEEK1' THEN 2
-            WHEN 'MONTH1' THEN 3
-          END
-      `);
+    const { data, error } = await supabase
+      .from(this.userTableName)
+      .select(
+        `
+        status,
+        updated_at,
+        checklist_items!inner (
+          item_id,
+          title,
+          stage,
+          description,
+          is_active
+        )
+      `,
+      )
+      .eq("user_id", userId)
+      .eq("checklist_items.is_active", true)
+      .order("item_id", { foreignTable: "checklist_items" });
 
-    return result.recordset;
+    if (error) throw error;
+
+    // transform data
+    return (data || []).map((item) => ({
+      ItemId: item.checklist_items.item_id,
+      Title: item.checklist_items.title,
+      Stage: item.checklist_items.stage,
+      Description: item.checklist_items.description,
+      Status: item.status,
+      UpdatedAt: item.updated_at,
+    }));
   }
 
   static async getUserItemStatus(userId, itemId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("ItemId", sql.Int, itemId)
-      .query(
-        `SELECT * FROM ${this.userTableName} WHERE UserId = @UserId AND ItemId = @ItemId`,
-      );
+    const { data, error } = await supabase
+      .from(this.userTableName)
+      .select("*")
+      .eq("user_id", userId)
+      .eq("item_id", itemId)
+      .maybeSingle();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async updateUserItemStatus(userId, itemId, status) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("UserId", sql.Int, userId)
-      .input("ItemId", sql.Int, itemId)
-      .input("Status", sql.NVarChar(20), status)
-      .input("UpdatedAt", sql.DateTime2, new Date()).query(`
-        UPDATE ${this.userTableName}
-        SET Status = @Status, UpdatedAt = @UpdatedAt
-        WHERE UserId = @UserId AND ItemId = @ItemId
-      `);
+    const { error } = await supabase
+      .from(this.userTableName)
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("item_id", itemId);
+
+    if (error) throw error;
   }
 
   static async initializeUserChecklist(userId) {
-    const pool = await getPool();
-    await pool.request().input("UserId", sql.Int, userId).query(`
-        INSERT INTO ${this.userTableName} (UserId, ItemId, Status)
-        SELECT @UserId, ItemId, 'PENDING'
-        FROM ${this.tableName}
-        WHERE IsActive = 1
-          AND NOT EXISTS (
-            SELECT 1 FROM ${this.userTableName} uc WHERE uc.UserId=@UserId AND uc.ItemId=ChecklistItems.ItemId
-          )
-      `);
+    // Get all active checklist items
+    const { data: items, error: itemsError } = await supabase
+      .from(this.tableName)
+      .select("item_id")
+      .eq("is_active", true);
+
+    if (itemsError) throw itemsError;
+
+    if (items && items.length > 0) {
+      // Create user checklist entries
+      const userChecklist = items.map((item) => ({
+        user_id: userId,
+        item_id: item.item_id,
+        status: "PENDING",
+      }));
+
+      const { error: insertError } = await supabase
+        .from(this.userTableName)
+        .insert(userChecklist);
+
+      if (insertError) throw insertError;
+    }
   }
 
   static async getUserProgress(userId) {
-    const pool = await getPool();
-    const result = await pool.request().input("UserId", sql.Int, userId).query(`
-        SELECT 
-          COUNT(*) as total,
-          SUM(CASE WHEN Status = 'DONE' THEN 1 ELSE 0 END) as done
-        FROM ${this.userTableName}
-        WHERE UserId = @UserId
-      `);
+    const { data, error } = await supabase
+      .from(this.userTableName)
+      .select("status")
+      .eq("user_id", userId);
 
-    const data = result.recordset[0];
+    if (error) throw error;
+
+    const total = data?.length || 0;
+    const done = data?.filter((item) => item.status === "DONE").length || 0;
+
     return {
-      total: data.total || 0,
-      done: data.done || 0,
-      percentage: data.total ? Math.round((data.done / data.total) * 100) : 0,
+      total,
+      done,
+      percentage: total ? Math.round((done / total) * 100) : 0,
     };
   }
 }

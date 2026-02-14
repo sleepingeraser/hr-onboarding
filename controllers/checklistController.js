@@ -1,32 +1,45 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getChecklist(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId).query(`
-        SELECT 
-          ci.ItemId,
-          ci.Title,
-          ci.Stage,
-          ci.Description,
-          uc.Status,
-          uc.UpdatedAt
-        FROM ChecklistItems ci
-        INNER JOIN UserChecklist uc ON ci.ItemId = uc.ItemId
-        WHERE uc.UserId = @UserId AND ci.IsActive = 1
-        ORDER BY 
-          CASE ci.Stage
-            WHEN 'DAY1' THEN 1
-            WHEN 'WEEK1' THEN 2
-            WHEN 'MONTH1' THEN 3
-          END
-      `);
+    const { data: checklist, error } = await supabase
+      .from("user_checklist")
+      .select(
+        `
+        status,
+        updated_at,
+        checklist_items!inner (
+          item_id,
+          title,
+          stage,
+          description,
+          is_active
+        )
+      `,
+      )
+      .eq("user_id", req.user.userId)
+      .eq("checklist_items.is_active", true)
+      .order("item_id", { foreignTable: "checklist_items" });
+
+    if (error) throw error;
+
+    // transform the data to match the expected format
+    const items = checklist.map((item) => ({
+      ItemId: item.checklist_items.item_id,
+      Title: item.checklist_items.title,
+      Stage: item.checklist_items.stage,
+      Description: item.checklist_items.description,
+      Status: item.status,
+      UpdatedAt: item.updated_at,
+    }));
+
+    // Sort by stage
+    const stageOrder = { DAY1: 1, WEEK1: 2, MONTH1: 3 };
+    items.sort((a, b) => stageOrder[a.Stage] - stageOrder[b.Stage]);
 
     res.json({
       success: true,
-      items: result.recordset,
+      items: items,
     });
   } catch (err) {
     console.error("GET checklist error:", err);
@@ -49,16 +62,16 @@ async function updateChecklistItem(req, res) {
       });
     }
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("ItemId", sql.Int, itemId)
-      .input("Status", sql.NVarChar(20), status).query(`
-        UPDATE UserChecklist 
-        SET Status = @Status, UpdatedAt = SYSDATETIME()
-        WHERE UserId = @UserId AND ItemId = @ItemId
-      `);
+    const { error } = await supabase
+      .from("user_checklist")
+      .update({
+        status: status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", req.user.userId)
+      .eq("item_id", itemId);
+
+    if (error) throw error;
 
     res.json({
       success: true,

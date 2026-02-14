@@ -1,34 +1,46 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getTrainings(req, res) {
   try {
     console.log("Getting trainings for user:", req.user.userId);
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId).query(`
-        SELECT 
-          t.TrainingId,
-          t.Title,
-          t.StartsAt,
-          t.Location,
-          t.Notes,
-          ISNULL(ut.Attendance, 'UPCOMING') as Attendance
-        FROM Trainings t
-        LEFT JOIN UserTraining ut ON t.TrainingId = ut.TrainingId AND ut.UserId = @UserId
-        WHERE ut.UserId = @UserId OR t.TrainingId IN (
-          SELECT TrainingId FROM Trainings 
-          WHERE NOT EXISTS (SELECT 1 FROM UserTraining WHERE TrainingId = t.TrainingId AND UserId = @UserId)
-        )
-        ORDER BY t.StartsAt ASC
-      `);
+    // first get all trainings
+    const { data: allTrainings, error: trainingsError } = await supabase
+      .from("trainings")
+      .select("*")
+      .order("starts_at", { ascending: true });
 
-    console.log(`Found ${result.recordset.length} trainings for user`);
+    if (trainingsError) throw trainingsError;
+
+    // then get user's attendance records
+    const { data: userAttendance, error: attendanceError } = await supabase
+      .from("user_training")
+      .select("training_id, attendance")
+      .eq("user_id", req.user.userId);
+
+    if (attendanceError) throw attendanceError;
+
+    // create a map of attendance
+    const attendanceMap = {};
+    userAttendance.forEach((record) => {
+      attendanceMap[record.training_id] = record.attendance;
+    });
+
+    // combine the data
+    const trainings = allTrainings.map((training) => ({
+      TrainingId: training.training_id,
+      Title: training.title,
+      StartsAt: training.starts_at,
+      Location: training.location,
+      Notes: training.notes,
+      Attendance: attendanceMap[training.training_id] || "UPCOMING",
+    }));
+
+    console.log(`Found ${trainings.length} trainings for user`);
 
     res.json({
       success: true,
-      trainings: result.recordset,
+      trainings: trainings,
     });
   } catch (err) {
     console.error("GET trainings error:", err);
@@ -55,38 +67,38 @@ async function updateAttendance(req, res) {
       });
     }
 
-    const pool = await getPool();
+    // check if record exists
+    const { data: existingRecord, error: checkError } = await supabase
+      .from("user_training")
+      .select("*")
+      .eq("user_id", req.user.userId)
+      .eq("training_id", trainingId)
+      .maybeSingle();
 
-    // Check if the record exists
-    const checkResult = await pool
-      .request()
-      .input("UserId", sql.Int, req.user.userId)
-      .input("TrainingId", sql.Int, trainingId).query(`
-        SELECT * FROM UserTraining 
-        WHERE UserId = @UserId AND TrainingId = @TrainingId
-      `);
+    if (checkError) throw checkError;
 
-    if (checkResult.recordset.length === 0) {
-      // Insert if doesn't exist
-      await pool
-        .request()
-        .input("UserId", sql.Int, req.user.userId)
-        .input("TrainingId", sql.Int, trainingId)
-        .input("Attendance", sql.NVarChar(20), attendance).query(`
-          INSERT INTO UserTraining (UserId, TrainingId, Attendance)
-          VALUES (@UserId, @TrainingId, @Attendance)
-        `);
+    if (!existingRecord) {
+      // insert if doesn't exist
+      const { error: insertError } = await supabase
+        .from("user_training")
+        .insert([
+          {
+            user_id: req.user.userId,
+            training_id: trainingId,
+            attendance: attendance,
+          },
+        ]);
+
+      if (insertError) throw insertError;
     } else {
-      // Update if exists
-      await pool
-        .request()
-        .input("UserId", sql.Int, req.user.userId)
-        .input("TrainingId", sql.Int, trainingId)
-        .input("Attendance", sql.NVarChar(20), attendance).query(`
-          UPDATE UserTraining
-          SET Attendance = @Attendance
-          WHERE UserId = @UserId AND TrainingId = @TrainingId
-        `);
+      // update if exists
+      const { error: updateError } = await supabase
+        .from("user_training")
+        .update({ attendance: attendance })
+        .eq("user_id", req.user.userId)
+        .eq("training_id", trainingId);
+
+      if (updateError) throw updateError;
     }
 
     console.log("Attendance updated successfully");
@@ -116,63 +128,63 @@ async function createTraining(req, res) {
     });
 
     if (!title || !startsAt) {
-      console.log("Missing required fields");
       return res.status(400).json({
         success: false,
         message: "Title and start time required",
       });
     }
 
-    const pool = await getPool();
+    // insert the training
+    const { data: training, error: insertError } = await supabase
+      .from("trainings")
+      .insert([
+        {
+          title: title,
+          starts_at: new Date(startsAt).toISOString(),
+          location: location || null,
+          notes: notes || null,
+        },
+      ])
+      .select()
+      .single();
 
-    // Insert the training
-    const result = await pool
-      .request()
-      .input("Title", sql.NVarChar(200), title)
-      .input("StartsAt", sql.DateTime2, new Date(startsAt))
-      .input("Location", sql.NVarChar(200), location || null)
-      .input("Notes", sql.NVarChar(500), notes || null).query(`
-        INSERT INTO Trainings (Title, StartsAt, Location, Notes)
-        OUTPUT INSERTED.TrainingId
-        VALUES (@Title, @StartsAt, @Location, @Notes)
-      `);
+    if (insertError) throw insertError;
 
-    const trainingId = result.recordset[0].TrainingId;
+    const trainingId = training.training_id;
     console.log("Training created with ID:", trainingId);
 
-    // Check if there are any employees to assign to
-    const employees = await pool
-      .request()
-      .query("SELECT UserId FROM Users WHERE Role = 'EMPLOYEE'");
+    // get all employees
+    const { data: employees, error: employeesError } = await supabase
+      .from("users")
+      .select("user_id")
+      .eq("role", "EMPLOYEE");
 
-    console.log(
-      `Found ${employees.recordset.length} employees to assign training to`,
-    );
+    if (employeesError) throw employeesError;
 
-    if (employees.recordset.length > 0) {
-      // assign to all employees
-      const assignResult = await pool
-        .request()
-        .input("TrainingId", sql.Int, trainingId).query(`
-          INSERT INTO UserTraining (UserId, TrainingId, Attendance)
-          SELECT UserId, @TrainingId, 'UPCOMING'
-          FROM Users
-          WHERE Role = 'EMPLOYEE'
-            AND NOT EXISTS (
-              SELECT 1 FROM UserTraining ut 
-              WHERE ut.UserId = Users.UserId AND ut.TrainingId = @TrainingId
-            )
-        `);
+    console.log(`Found ${employees.length} employees to assign training to`);
 
-      console.log(
-        `Assigned training to ${assignResult.rowsAffected[0]} employees`,
-      );
+    if (employees.length > 0) {
+      // prepare assignments for all employees
+      const assignments = employees.map((emp) => ({
+        user_id: emp.user_id,
+        training_id: trainingId,
+        attendance: "UPCOMING",
+      }));
+
+      // insert assignments
+      const { error: assignError } = await supabase
+        .from("user_training")
+        .insert(assignments);
+
+      if (assignError) throw assignError;
+
+      console.log(`Assigned training to ${employees.length} employees`);
     }
 
     res.status(201).json({
       success: true,
       message: "Training created successfully",
-      trainingId,
+      trainingId: trainingId,
     });
   } catch (err) {
     console.error("POST training error:", err);

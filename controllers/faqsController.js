@@ -1,24 +1,19 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 async function getFAQs(req, res) {
   try {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-        SELECT 
-          FaqId,
-          Question,
-          Answer,
-          Category,
-          IsActive,
-          CreatedAt
-        FROM FAQs
-        WHERE IsActive = 1
-        ORDER BY Category, CreatedAt DESC
-      `);
+    const { data: faqs, error } = await supabase
+      .from("faqs")
+      .select("*")
+      .eq("is_active", true)
+      .order("category", { ascending: true })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
 
     res.json({
       success: true,
-      faqs: result.recordset,
+      faqs: faqs || [],
     });
   } catch (err) {
     console.error("GET FAQs error:", err);
@@ -40,15 +35,16 @@ async function createFAQ(req, res) {
       });
     }
 
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("Question", sql.NVarChar(200), question)
-      .input("Answer", sql.NVarChar(sql.MAX), answer)
-      .input("Category", sql.NVarChar(80), category || null).query(`
-        INSERT INTO FAQs (Question, Answer, Category, IsActive)
-        VALUES (@Question, @Answer, @Category, 1)
-      `);
+    const { error } = await supabase.from("faqs").insert([
+      {
+        question: question,
+        answer: answer,
+        category: category || null,
+        is_active: true,
+      },
+    ]);
+
+    if (error) throw error;
 
     res.status(201).json({
       success: true,
@@ -68,38 +64,25 @@ async function updateFAQ(req, res) {
     const { faqId } = req.params;
     const { question, answer, category, isActive } = req.body;
 
-    const pool = await getPool();
-    const request = pool.request().input("FaqId", sql.Int, faqId);
+    const updates = {};
+    if (question !== undefined) updates.question = question;
+    if (answer !== undefined) updates.answer = answer;
+    if (category !== undefined) updates.category = category;
+    if (isActive !== undefined) updates.is_active = isActive;
 
-    let query = "UPDATE FAQs SET ";
-    const updates = [];
-
-    if (question !== undefined) {
-      request.input("Question", sql.NVarChar(200), question);
-      updates.push("Question = @Question");
-    }
-    if (answer !== undefined) {
-      request.input("Answer", sql.NVarChar(sql.MAX), answer);
-      updates.push("Answer = @Answer");
-    }
-    if (category !== undefined) {
-      request.input("Category", sql.NVarChar(80), category);
-      updates.push("Category = @Category");
-    }
-    if (isActive !== undefined) {
-      request.input("IsActive", sql.Bit, isActive);
-      updates.push("IsActive = @IsActive");
-    }
-
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         success: false,
         message: "No fields to update",
       });
     }
 
-    query += updates.join(", ") + " WHERE FaqId = @FaqId";
-    await request.query(query);
+    const { error } = await supabase
+      .from("faqs")
+      .update(updates)
+      .eq("faq_id", faqId);
+
+    if (error) throw error;
 
     res.json({
       success: true,

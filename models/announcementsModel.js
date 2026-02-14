@@ -1,126 +1,120 @@
-const { sql, getPool } = require("../config/dbConfig");
+const supabase = require("../config/supabaseConfig");
 
 class AnnouncementsModel {
-  static tableName = "Announcements";
+  static tableName = "announcements";
 
   static async findAll() {
-    const pool = await getPool();
-    const result = await pool.query(`
-      SELECT * FROM ${this.tableName} 
-      ORDER BY CreatedAt DESC
-    `);
-    return result.recordset;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 
   static async findById(announcementId) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("AnnouncementId", sql.Int, announcementId)
-      .query(
-        `SELECT * FROM ${this.tableName} WHERE AnnouncementId = @AnnouncementId`,
-      );
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .eq("announcement_id", announcementId)
+      .single();
 
-    return result.recordset[0] || null;
+    if (error) return null;
+    return data;
   }
 
   static async findByAudience(role) {
-    const pool = await getPool();
-    const result = await pool.request().input("Role", sql.NVarChar(20), role)
-      .query(`
-        SELECT * FROM ${this.tableName} 
-        WHERE Audience = 'ALL' OR Audience = @Role 
-        ORDER BY CreatedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .or(`audience.eq.ALL,audience.eq.${role}`)
+      .order("created_at", { ascending: false });
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async findLatest(limit = 5) {
-    const pool = await getPool();
-    const result = await pool.request().input("Limit", sql.Int, limit).query(`
-        SELECT TOP (@Limit) * FROM ${this.tableName} 
-        ORDER BY CreatedAt DESC
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
-    return result.recordset;
+    if (error) throw error;
+    return data || [];
   }
 
   static async create(announcementData) {
     const { title, body, audience, createdByUserId } = announcementData;
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Title", sql.NVarChar(120), title)
-      .input("Body", sql.NVarChar(sql.MAX), body)
-      .input("Audience", sql.NVarChar(20), audience)
-      .input("CreatedByUserId", sql.Int, createdByUserId)
-      .input("CreatedAt", sql.DateTime2, new Date()).query(`
-        INSERT INTO ${this.tableName} (Title, Body, Audience, CreatedByUserId, CreatedAt)
-        OUTPUT INSERTED.*
-        VALUES (@Title, @Body, @Audience, @CreatedByUserId, @CreatedAt)
-      `);
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .insert([
+        {
+          title,
+          body,
+          audience,
+          created_by_user_id: createdByUserId,
+        },
+      ])
+      .select()
+      .single();
 
-    return result.recordset[0];
+    if (error) throw error;
+    return data;
   }
 
   static async update(announcementId, announcementData) {
-    const pool = await getPool();
-    const request = pool
-      .request()
-      .input("AnnouncementId", sql.Int, announcementId);
+    const updates = {};
+    if (announcementData.title !== undefined)
+      updates.title = announcementData.title;
+    if (announcementData.body !== undefined)
+      updates.body = announcementData.body;
+    if (announcementData.audience !== undefined)
+      updates.audience = announcementData.audience;
 
-    const updates = [];
-    if (announcementData.title !== undefined) {
-      request.input("Title", sql.NVarChar(120), announcementData.title);
-      updates.push("Title = @Title");
-    }
-    if (announcementData.body !== undefined) {
-      request.input("Body", sql.NVarChar(sql.MAX), announcementData.body);
-      updates.push("Body = @Body");
-    }
-    if (announcementData.audience !== undefined) {
-      request.input("Audience", sql.NVarChar(20), announcementData.audience);
-      updates.push("Audience = @Audience");
-    }
+    if (Object.keys(updates).length === 0) return null;
 
-    if (updates.length === 0) return null;
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update(updates)
+      .eq("announcement_id", announcementId)
+      .select()
+      .single();
 
-    const query = `UPDATE ${this.tableName} SET ${updates.join(", ")} WHERE AnnouncementId = @AnnouncementId`;
-    await request.query(query);
-
-    return await this.findById(announcementId);
+    if (error) throw error;
+    return data;
   }
 
   static async delete(announcementId) {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("AnnouncementId", sql.Int, announcementId)
-      .query(
-        `DELETE FROM ${this.tableName} WHERE AnnouncementId = @AnnouncementId`,
-      );
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq("announcement_id", announcementId);
+
+    if (error) throw error;
+    return true;
   }
 
   static async count() {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT COUNT(*) as count FROM ${this.tableName}`,
-    );
-    return result.recordset[0].count;
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true });
+
+    if (error) throw error;
+    return count || 0;
   }
 
   static async countByAudience(audience) {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("Audience", sql.NVarChar(20), audience)
-      .query(
-        `SELECT COUNT(*) as count FROM ${this.tableName} WHERE Audience = @Audience`,
-      );
+    const { count, error } = await supabase
+      .from(this.tableName)
+      .select("*", { count: "exact", head: true })
+      .eq("audience", audience);
 
-    return result.recordset[0].count;
+    if (error) throw error;
+    return count || 0;
   }
 }
 
