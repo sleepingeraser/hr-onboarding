@@ -2,11 +2,6 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const supabase = require("../config/supabaseConfig");
 const { JWT_SECRET } = require("../middleware/auth");
-const { data: existingUser, error: checkError } = await supabase
-  .from("users")
-  .select("user_id")
-  .eq("email", email)
-  .single();
 
 function signToken(user) {
   return jwt.sign(
@@ -39,12 +34,12 @@ async function register(req, res) {
       });
     }
 
-    // Check if user exists
+    // sheck if user exists
     const { data: existingUser, error: checkError } = await supabase
       .from("users")
       .select("user_id")
       .eq("email", email)
-      .single();
+      .maybeSingle();
 
     if (existingUser) {
       return res.status(409).json({
@@ -55,7 +50,7 @@ async function register(req, res) {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Insert new user
+    // insert new user
     const { data: user, error: insertError } = await supabase
       .from("users")
       .insert([
@@ -71,7 +66,7 @@ async function register(req, res) {
 
     if (insertError) throw insertError;
 
-    // Auto-create checklist for user
+    // auto-create checklist for user
     const { data: checklistItems } = await supabase
       .from("checklist_items")
       .select("item_id")
@@ -87,7 +82,7 @@ async function register(req, res) {
       await supabase.from("user_checklist").insert(userChecklist);
     }
 
-    // Auto-assign trainings
+    // auto-assign trainings
     const { data: trainings } = await supabase
       .from("trainings")
       .select("training_id");
@@ -134,12 +129,12 @@ async function login(req, res) {
       });
     }
 
-    // Get user
+    // get user
     const { data: user, error } = await supabase
       .from("users")
       .select("*")
       .eq("email", email)
-      .single();
+      .maybeSingle();
 
     if (error || !user) {
       return res.status(401).json({

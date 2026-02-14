@@ -14,11 +14,12 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // test the connection
-(async () => {
+async function testConnection() {
   try {
     const { data, error } = await supabase
       .from("users")
       .select("count", { count: "exact", head: true });
+
     if (error) {
       console.error("Supabase connection test failed:", error.message);
     } else {
@@ -27,6 +28,9 @@ const supabase = createClient(supabaseUrl, supabaseKey);
   } catch (err) {
     console.error("Supabase connection error:", err.message);
   }
-})();
+}
+
+// run the test
+testConnection();
 
 module.exports = supabase;

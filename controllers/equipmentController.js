@@ -260,7 +260,7 @@ async function markReturned(req, res) {
       .from("user_equipment")
       .select("equipment_id")
       .eq("assignment_id", assignmentId)
-      .single();
+      .maybeSingle();
 
     if (getError || !assignment) {
       return res.status(404).json({

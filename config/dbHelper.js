@@ -12,7 +12,7 @@ class DB {
     return data;
   }
 
-  static async from(table) {
+  static from(table) {
     return supabase.from(table);
   }
 }
