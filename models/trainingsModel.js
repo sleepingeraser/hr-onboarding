@@ -187,7 +187,7 @@ class TrainingsModel {
   }
 
   static async assignToAllEmployees(trainingId) {
-    // Get all employees
+    // get all employees
     const { data: employees, error: empError } = await supabase
       .from("users")
       .select("user_id")

@@ -33,7 +33,7 @@ async function getChecklist(req, res) {
       UpdatedAt: item.updated_at,
     }));
 
-    // Sort by stage
+    // sort by stage
     const stageOrder = { DAY1: 1, WEEK1: 2, MONTH1: 3 };
     items.sort((a, b) => stageOrder[a.Stage] - stageOrder[b.Stage]);
 

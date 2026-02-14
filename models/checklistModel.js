@@ -132,7 +132,7 @@ class ChecklistModel {
   }
 
   static async initializeUserChecklist(userId) {
-    // Get all active checklist items
+    // get all active checklist items
     const { data: items, error: itemsError } = await supabase
       .from(this.tableName)
       .select("item_id")
@@ -141,7 +141,7 @@ class ChecklistModel {
     if (itemsError) throw itemsError;
 
     if (items && items.length > 0) {
-      // Create user checklist entries
+      // create user checklist entries
       const userChecklist = items.map((item) => ({
         user_id: userId,
         item_id: item.item_id,

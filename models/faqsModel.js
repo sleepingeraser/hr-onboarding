@@ -83,7 +83,7 @@ class FAQsModel {
   }
 
   static async delete(faqId) {
-    // Soft delete - mark as inactive
+    // mark as inactive
     return await this.update(faqId, { isActive: false });
   }
 

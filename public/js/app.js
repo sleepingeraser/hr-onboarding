@@ -688,9 +688,6 @@ async function loadPendingDocsHR() {
 }
 
 // ---------------- TRAININGS ----------------
-// ... (rest of your app.js code remains the same, but here's the updated training functions)
-
-// ---------------- TRAININGS ----------------
 async function loadTrainingsPage() {
   console.log("Loading trainings page");
 
@@ -751,7 +748,7 @@ async function loadTrainingsPage() {
         buttonClass = "btn-primary";
         buttonText = "Mark Attended";
       } else {
-        // Default case
+        // default case
         buttonClass = "btn-primary";
         buttonText = "Mark Attended";
       }
@@ -890,13 +887,13 @@ async function createTraining(e) {
       msg.style.backgroundColor = "#d1fae5";
     }
 
-    // Clear the form
+    // clear the form
     document.getElementById("tTitle").value = "";
     document.getElementById("tStartsAt").value = "";
     document.getElementById("tLocation").value = "";
     document.getElementById("tNotes").value = "";
 
-    // Show success message and redirect
+    // show success message and redirect
     setTimeout(() => {
       window.location.href = "/hr.html";
     }, 2000);
