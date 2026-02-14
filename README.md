@@ -12,6 +12,45 @@ koyuki's site: https://sleepingeraser.github.io/hr-onboarding/
 
 koyuki's render: https://hr-onboarding-p9ib.onrender.com/index.html
 
+koyuki's supabase api url: https://enqdnkfsgmwmxpjuzmdv.supabase.co
+
+## login details
+
+name: Yuki
+email: yukinotyuki15@gmail.com
+password: 123456
+role: employee
+
+name: Astra
+email: astrastone19@gmail.com
+password:123456
+role: employee
+
+name: Leo
+email: futurepastleo1777@gmail.com
+password: 123456
+role: employee
+
+name: Miyuki
+email: limitlesssixeyesmiyuki14@gmail.com
+password: 123456
+role: employee
+
+name: Haruka
+email: harukaidol1519@gmail.com
+password: 123456
+role: employee
+
+name: Yukihime
+email: sleepingeraser1525@gmail.com
+password: 123456
+role: employee
+
+name: Koyuki
+email: koyukisky18@gmail.com
+password: 654321
+role: HR
+
 ---
 
 ## features
