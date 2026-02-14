@@ -10,6 +10,8 @@ repository: https://github.com/sleepingeraser/hr-onboarding.git
 
 koyuki's site: https://sleepingeraser.github.io/hr-onboarding/
 
+koyuki's render: https://hr-onboarding-p9ib.onrender.com/index.html
+
 ---
 
 ## features
